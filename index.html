@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="he" dir="rtl" translate="no" class="notranslate">
 <head>
     <meta charset="UTF-8">
@@ -98,15 +98,15 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'yeshiva-lms-storage';
         
         // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyC5-eKe4v_X2uPYss0FU0FxwvrzMDcbPAQ",
-  authDomain: "ashrinuseva.firebaseapp.com",
-  projectId: "ashrinuseva",
-  storageBucket: "ashrinuseva.firebasestorage.app",
-  messagingSenderId: "1058011263523",
-  appId: "1:1058011263523:web:84399ee76936a4afd4f796",
-  measurementId: "G-7WE39D9CE6"
-};
+        const firebaseConfig = {
+          apiKey: "AIzaSyC5-eKe4v_X2uPYss0FU0FxwvrzMDcbPAQ",
+          authDomain: "ashrinuseva.firebaseapp.com",
+          projectId: "ashrinuseva",
+          storageBucket: "ashrinuseva.firebasestorage.app",
+          messagingSenderId: "1058011263523",
+          appId: "1:1058011263523:web:84399ee76936a4afd4f796",
+          measurementId: "G-7WE39D9CE6"
+        };
         const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('Dummy') && !firebaseConfig.apiKey.includes('הכנס_כאן');
         window.isFirebaseConfigured = isFirebaseConfigured;
 
@@ -368,14 +368,18 @@ const firebaseConfig = {
                 const studentView = document.getElementById('student-live-view-content');
                 if (studentView && this.currentView === 'student') {
                     const newText = mockDataStore.liveContent[cls] || 'המורה טרם החל לכתוב בלוח...';
-                    if (studentView.innerHTML !== newText) studentView.innerHTML = newText;
+                    if (studentView.innerHTML !== newText) {
+                        studentView.innerHTML = newText;
+                    }
                 }
 
                 const teacherEditor = document.getElementById('teacher-live-editor');
                 if (teacherEditor && this.currentView === 'teacher') {
                     if (document.activeElement !== teacherEditor) {
                         const newText = mockDataStore.liveContent[cls] || '';
-                        if (teacherEditor.innerHTML !== newText) teacherEditor.innerHTML = newText;
+                        if (teacherEditor.innerHTML !== newText) {
+                            teacherEditor.innerHTML = newText;
+                        }
                     }
                 }
             },
@@ -1156,7 +1160,7 @@ const firebaseConfig = {
                                                     <span class="text-base">${s.name}</span>
                                                     <div class="flex flex-wrap gap-1">
                                                         ${(s.notebooks || []).map(nb => `
-                                                            <button onclick="window.open('${nb.url}', '_blank')" class="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded hover:bg-indigo-100 transition shadow-sm font-bold truncate max-w-[120px]" title="${nb.name}">
+                                                            <button onclick="appState.openStudentNotebookModal('${nb.url}', '${nb.name}', '${s.name}')" class="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded hover:bg-indigo-100 transition shadow-sm font-bold truncate max-w-[120px]" title="${nb.name}">
                                                                 <i class="fas fa-book-open"></i> ${nb.name}
                                                             </button>
                                                         `).join('')}
@@ -1180,6 +1184,26 @@ const firebaseConfig = {
                         </div>
                     </div>
                 `;
+            },
+
+            openStudentNotebookModal(url, notebookName, studentName) {
+                const modalId = 'student-notebook-modal';
+                const existing = document.getElementById(modalId);
+                if (existing) existing.remove();
+
+                const html = `
+                    <div id="${modalId}" class="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center backdrop-blur-sm p-4" dir="rtl">
+                        <div class="bg-white rounded-2xl w-full max-w-4xl h-[80vh] overflow-hidden shadow-2xl flex flex-col">
+                            <div class="bg-indigo-600 p-4 text-white flex justify-between items-center shrink-0">
+                                <h3 class="font-bold flex items-center gap-2"><i class="fas fa-book-open"></i> ${notebookName} - ${studentName}</h3>
+                                <button onclick="document.getElementById('${modalId}').remove()" class="hover:bg-white/20 w-8 h-8 rounded-lg flex items-center justify-center transition"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="flex-1 bg-slate-100 relative">
+                                <iframe src="${url}" class="absolute inset-0 w-full h-full border-none"></iframe>
+                            </div>
+                        </div>
+                    </div>`;
+                document.getElementById('dynamic-modals').insertAdjacentHTML('beforeend', html);
             },
 
             renderTeacherChatTab(cls) {
@@ -1326,7 +1350,12 @@ const firebaseConfig = {
                 
                 input.value = '';
                 this.syncToCloud();
-                this.updateDynamicUI(); // עדכון מיידי של ממשק הצ'אט אצל השולח
+                
+                if (this.currentView === 'teacher') {
+                    this.updateChatUIOnly();
+                } else {
+                     this.updateChatUIOnly();
+                }
                 
                 setTimeout(() => {
                     const winId = this.currentView === 'teacher' ? 'teacher-chat-window' : 'student-chat-window';
@@ -1816,11 +1845,19 @@ const firebaseConfig = {
                         if (scriptEl) scriptEl.remove();
 
                         if (result.success) {
-                            if (!this.currentUser.notebooks) this.currentUser.notebooks = [];
-                            this.currentUser.notebooks.push(result.notebook);
-                            this.syncToCloud();
-                            this.showToast('המחברת נוצרה בהצלחה!', 'success');
-                            this.render();
+                            // Find the user directly in mockDataStore to ensure saving works
+                            const userInStore = mockDataStore.users.find(u => u.id === this.currentUser.id);
+                            if (userInStore) {
+                                if (!userInStore.notebooks) userInStore.notebooks = [];
+                                userInStore.notebooks.push(result.notebook);
+                                
+                                // Update currentUser reference as well just in case
+                                this.currentUser = userInStore;
+                                
+                                this.syncToCloud();
+                                this.showToast('המחברת נוצרה בהצלחה!', 'success');
+                                this.render();
+                            }
                         } else {
                             this.showToast('שגיאה מהשרת: ' + result.error, 'error');
                         }
@@ -1831,7 +1868,7 @@ const firebaseConfig = {
                     
                     const params = new URLSearchParams({
                         action: 'createNotebook',
-                        studentId: this.currentUser.id,
+                        studentId: this.currentUser.name, // Changed to name
                         notebookName: name.trim(),
                         callback: callbackName
                     });
