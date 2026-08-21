@@ -1,0 +1,19 @@
+{
+  "name": "ahrinu-student",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-assets.mjs",
+    "verify": "node scripts/verify-assets.mjs"
+  },
+  "dependencies": {
+    "firebase": "11.6.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "tailwindcss": "3.4.17"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

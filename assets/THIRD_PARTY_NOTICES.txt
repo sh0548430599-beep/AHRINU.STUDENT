@@ -1,0 +1,21 @@
+Student LMS production assets
+
+DOMPurify 3.0.6
+Source: https://github.com/cure53/DOMPurify/tree/3.0.6
+Asset: purify-3.0.6.min.js
+License: licenses/DOMPurify-LICENSE.txt
+
+Font Awesome Free 6.0.0
+Source: https://github.com/FortAwesome/Font-Awesome/tree/6.0.0
+Assets: icons-52930673420b.min.css and fonts/fa-*.woff2
+License: licenses/Font-Awesome-LICENSE.txt
+
+Heebo variable font, Google Fonts v28
+Source: https://fonts.google.com/specimen/Heebo
+Assets: fonts/heebo-*.woff2
+License: licenses/Heebo-OFL.txt
+
+Tailwind CSS 3.4.17
+Source: https://github.com/tailwindlabs/tailwindcss/tree/v3.4.17
+Asset: tailwind-30c909516fd3.min.css
+License: licenses/Tailwind-CSS-LICENSE.txt

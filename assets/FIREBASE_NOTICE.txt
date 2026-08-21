@@ -1,0 +1,8 @@
+Firebase JavaScript SDK 11.6.1
+Source: https://github.com/firebase/firebase-js-sdk/tree/firebase%4011.6.1
+Bundled asset: firebase-storage-*.min.js
+License: licenses/Firebase-LICENSE.txt
+
+The Firebase SDK is licensed under Apache-2.0 apart from its protobuf library,
+which is licensed under BSD-3-Clause. Both license texts are included in the
+referenced file.
