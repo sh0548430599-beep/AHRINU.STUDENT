@@ -1,31 +1,46 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="he" dir="rtl" translate="no" class="notranslate">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     <title>ישיבת אשרינו LMS</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- ספריית DOMPurify להגנה מפני הזרקת קוד זדוני (XSS) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <link rel="preload" href="./assets/fonts/heebo-hebrew-f1f7cfaef594.woff2" as="font" type="font/woff2" crossorigin>
+    <link href="./assets/tailwind-30c909516fd3.min.css" rel="stylesheet">
+    <link href="./assets/icons-52930673420b.min.css" rel="stylesheet">
+    <script src="./assets/purify-3.0.6.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&display=swap');
-        
-        body { 
-            font-family: 'Heebo', sans-serif; 
+        @font-face {
+            font-family: 'Heebo';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url('./assets/fonts/heebo-hebrew-f1f7cfaef594.woff2') format('woff2');
+            unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+        }
+        @font-face {
+            font-family: 'Heebo';
+            font-style: normal;
+            font-weight: 300 900;
+            font-display: swap;
+            src: url('./assets/fonts/heebo-latin-50dae2e12dae.woff2') format('woff2');
+            unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+        }
+
+        body {
+            font-family: 'Heebo', sans-serif;
             background-color: #f8fafc;
         }
-        
+
         .protected-content {
             user-select: none;
             -webkit-user-select: none;
         }
-        
+
         .toast {
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        
+
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -49,7 +64,7 @@
             z-index: 50;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         }
-        
+
         .dots-loading::after {
             content: '.';
             animation: dots 1.5s steps(5, end) infinite;
@@ -63,7 +78,7 @@
     </style>
 </head>
 <body class="text-slate-800 h-screen flex flex-col overflow-hidden notranslate" translate="no">
-    
+
     <div id="error-screen" class="hidden fixed inset-0 bg-rose-600 z-[99999] flex-col items-center justify-center text-white p-8">
         <i class="fas fa-exclamation-triangle text-6xl mb-4"></i>
         <h1 class="text-3xl font-black mb-2">שגיאת מערכת חמורה</h1>
@@ -81,7 +96,7 @@
                 errScreen.classList.add('flex');
                 errDetails.innerHTML = `Error: ${message}\nLine: ${lineno}:${colno}`;
             }
-            return false; 
+            return false;
         };
     </script>
 
@@ -92,83 +107,14 @@
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const appId = 'ashrinuseva-production';
-        
-        // הגדרות Firebase
-        const firebaseConfig = {
-          apiKey: "AIzaSyC5-eKe4v_X2uPYss0FU0FxwvrzMDcbPAQ",
-          authDomain: "ashrinuseva.firebaseapp.com",
-          projectId: "ashrinuseva",
-          storageBucket: "ashrinuseva.firebasestorage.app",
-          messagingSenderId: "1058011263523",
-          appId: "1:1058011263523:web:ec7ed7a67fe86987d4f796"
-        };
-        
-        const isFirebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('Dummy') && !firebaseConfig.apiKey.includes('הכנס_כאן');
-        window.isFirebaseConfigured = isFirebaseConfigured;
-
-        let db = null;
-        let auth = null;
-
-        try {
-            if (isFirebaseConfigured) {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-            }
-        } catch(e) {
-            console.log("Cloud sync initialized in local fallback mode.");
-        }
-
-        window.cloudStorage = {
-            async initAuth() {
-                if (!auth) return null;
-                try {
-                    const cred = await signInAnonymously(auth);
-                    return cred.user;
-                } catch (e) {
-                    console.warn("Cloud auth notice:", e);
-                    return null;
-                }
-            },
-
-            listenData(callback) {
-                if (!db || !auth) return;
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'systemData', 'mainStore');
-                onSnapshot(docRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        callback(docSnap.data());
-                    }
-                }, (err) => console.log("Cloud sync snapshot notice:", err));
-            },
-
-            async saveData(dataObj) {
-                if (!db || !auth) return;
-                try {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'systemData', 'mainStore');
-                    await setDoc(docRef, dataObj, { merge: true });
-                } catch(e) {
-                    console.warn("Cloud save notice:", e);
-                }
-            }
-        };
-    </script>
+    <script type="module" src="./assets/firebase-storage-23d0bffc8150.min.js"></script>
 
     <script>
         // כתובת שרת ה-API המאובטח (Google Apps Script)
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby3-NLrnUg29CSSIYBRn5CtOHt0VdbLo9UxeuBPWF7euBZgHHpOTG64f4TRAbuCw0PRPg/exec"; 
-        
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby3-NLrnUg29CSSIYBRn5CtOHt0VdbLo9UxeuBPWF7euBZgHHpOTG64f4TRAbuCw0PRPg/exec";
+
         const initialMockData = {
-            users: [
-                { id: 'admin', name: 'מנהל המערכת', password: '1234', role: 'admin', lastLogin: '' },
-                { id: 'teacher', name: 'הרב ישראל כהן', password: '1234', role: 'teacher', className: 'י״א', lastLogin: '' },
-                { id: 'student', name: 'יוסי לוי', password: '1234', role: 'student', className: 'י״א', lastLogin: '', notebooks: [] }
-            ],
+            users: [],
             classes: ['י״א'],
             notices: [
                 { id: Date.now(), title: 'ברוכים הבאים', content: 'מערכת ישיבת אשרינו פעילה ומסונכרנת בענן.', date: new Date().toLocaleDateString('he-IL') }
@@ -199,15 +145,15 @@
                     systemInstruction: systemInstruction,
                     isJsonMode: false
                 };
-                
+
                 const response = await fetch(GAS_WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     return result.text;
                 }
@@ -225,15 +171,15 @@
                     systemInstruction: systemInstruction,
                     isJsonMode: true
                 };
-                
+
                 const response = await fetch(GAS_WEB_APP_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     return JSON.parse(result.text);
                 }
@@ -244,10 +190,9 @@
         }
 
         function sanitizeInput(html) {
-            if (!window.DOMPurify) return html;
-            return DOMPurify.sanitize(html, { 
-                ALLOWED_TAGS: ['b', 'i', 'u', 'em', 'strong', 'ul', 'ol', 'li', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3'], 
-                ALLOWED_ATTR: ['style', 'class', 'dir'] 
+            return DOMPurify.sanitize(html, {
+                ALLOWED_TAGS: ['b', 'i', 'u', 'em', 'strong', 'ul', 'ol', 'li', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3'],
+                ALLOWED_ATTR: ['style', 'class', 'dir']
             });
         }
 
@@ -312,7 +257,7 @@
                 return chatHistory.map(c => {
                     const isMe = role === 'teacher' ? c.from === 'teacher' : c.from === this.currentUser.id;
                     const isBroadcast = c.to === 'all';
-                    const safeText = window.DOMPurify ? DOMPurify.sanitize(this.linkifyText(c.text), { ALLOWED_TAGS: ['a'], ALLOWED_ATTR: ['href', 'target', 'class'] }) : this.linkifyText(c.text);
+                    const safeText = DOMPurify.sanitize(this.linkifyText(c.text), { ALLOWED_TAGS: ['a'], ALLOWED_ATTR: ['href', 'target', 'class'] });
                     return `
                     <div class="relative max-w-[75%] p-3 rounded-2xl shadow-sm text-sm ${isMe ? 'bg-[#dcf8c6] self-end border border-[#c4eab0]' : isBroadcast ? 'bg-amber-100 self-start border border-amber-200' : 'bg-white self-start border border-slate-100'}">
                         ${isBroadcast && role === 'student' ? '<div class="text-xs text-amber-600 font-bold mb-1"><i class="fas fa-bullhorn"></i> הודעה לכלל הכיתה</div>' : ''}
@@ -356,7 +301,7 @@
             updateLiveBoardUIOnly() {
                 if (!this.currentUser || !this.currentUser.className) return;
                 const cls = this.currentUser.className;
-                
+
                 const studentView = document.getElementById('student-live-view-content');
                 if (studentView && this.currentView === 'student') {
                     const rawText = mockDataStore.liveContent[cls] || 'המורה טרם החל לכתוב בלוח...';
@@ -382,8 +327,8 @@
                 if(marquee) {
                      const notices = mockDataStore.notices || [];
                      marquee.innerHTML = notices.map(n => {
-                         const safeTitle = window.DOMPurify ? DOMPurify.sanitize(n.title) : n.title;
-                         const safeContent = window.DOMPurify ? DOMPurify.sanitize(n.content) : n.content;
+                         const safeTitle = DOMPurify.sanitize(n.title);
+                         const safeContent = DOMPurify.sanitize(n.content);
                          return `<span class="font-bold text-amber-800 text-sm ml-1">${safeTitle}:</span> <span class="text-slate-700 text-sm ml-6">${safeContent}</span>`;
                      }).join('');
                 }
@@ -437,9 +382,9 @@
                 toast.id = 'current-toast';
                 const bgColor = type === 'success' ? 'bg-emerald-500' : 'bg-rose-500';
                 toast.className = `fixed bottom-6 left-1/2 transform -translate-x-1/2 ${bgColor} text-white px-6 py-3 rounded-2xl shadow-xl z-[9999] flex items-center gap-3 toast translate-y-20 opacity-0 font-medium border border-white/20`;
-                toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} text-lg"></i> <span>${window.DOMPurify ? DOMPurify.sanitize(msg) : msg}</span>`;
+                toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} text-lg"></i> <span>${DOMPurify.sanitize(msg)}</span>`;
                 document.body.appendChild(toast);
-                
+
                 requestAnimationFrame(() => toast.classList.remove('translate-y-20', 'opacity-0'));
                 setTimeout(() => {
                     toast.classList.add('translate-y-20', 'opacity-0');
@@ -451,7 +396,7 @@
                 const modalId = 'prompt-' + Date.now();
                 if (!this._promptCb) this._promptCb = {};
                 this._promptCb[modalId] = callback;
-                
+
                 const html = `
                     <div id="${modalId}" class="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center backdrop-blur-sm p-4" dir="rtl">
                         <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
@@ -476,7 +421,7 @@
                 const modalId = 'confirm-' + Date.now();
                 if (!this._confirmCb) this._confirmCb = {};
                 this._confirmCb[modalId] = callback;
-                
+
                 const html = `
                     <div id="${modalId}" class="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center backdrop-blur-sm p-4" dir="rtl">
                         <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
@@ -520,7 +465,7 @@
             render() {
                 const appDiv = document.getElementById('app');
                 if (!appDiv) return;
-                
+
                 if (this.currentView === 'login' || !this.currentUser) {
                     appDiv.innerHTML = this.renderLoginScreen();
                 } else {
@@ -531,7 +476,7 @@
 
                     const notices = mockDataStore.notices || [];
                     const logoUrl = 'https://lh3.googleusercontent.com/d/1WXvgS1_FYWCk5tYgdOgdpjLGEAHyJN1C=w500';
-                    
+
                     appDiv.innerHTML = `
                         <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center z-10 shrink-0">
                             <div class="flex items-center gap-6">
@@ -542,7 +487,7 @@
                                     <div>
                                         <h1 class="font-black text-2xl text-slate-800 leading-none mb-1">ישיבת אשרינו</h1>
                                         <p class="text-sm text-slate-500 font-medium">
-                                            שלום, ${this.currentUser.name} <span class="mx-1">•</span> 
+                                            שלום, ${this.currentUser.name} <span class="mx-1">•</span>
                                             <span class="text-indigo-600 font-bold">${this.getRoleName(this.currentUser.role)}</span>
                                             ${this.currentUser.className ? ` <span class="mx-1">•</span> כיתה ${this.currentUser.className}` : ''}
                                         </p>
@@ -554,8 +499,8 @@
                                     <div id="marquee-content" class="flex items-center gap-2 whitespace-nowrap animate-[marquee_20s_linear_infinite] hover:[animation-play-state:paused]">
                                         <i class="fas fa-bullhorn text-amber-500 shrink-0"></i>
                                         ${notices.map(n => {
-                                             const sT = window.DOMPurify ? DOMPurify.sanitize(n.title) : n.title;
-                                             const sC = window.DOMPurify ? DOMPurify.sanitize(n.content) : n.content;
+                                             const sT = DOMPurify.sanitize(n.title);
+                                             const sC = DOMPurify.sanitize(n.content);
                                              return `<span class="font-bold text-amber-800 text-sm ml-1">${sT}:</span> <span class="text-slate-700 text-sm ml-6">${sC}</span>`
                                         }).join('')}
                                     </div>
@@ -590,14 +535,14 @@
                     <div class="flex-1 flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200">
                         <div class="absolute -top-40 -right-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
                         <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-                        
+
                         <div class="bg-white/80 backdrop-blur-xl p-10 rounded-[2rem] shadow-2xl border border-white w-full max-w-md text-center relative z-10">
                             <div class="w-28 h-28 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-100 overflow-hidden bg-white border border-slate-100 hover:scale-105 transition-transform duration-300">
                                 <img src="${logoUrl}" alt="לוגו ישיבת אשרינו" class="w-full h-full object-cover" onerror="this.outerHTML='<i class=\'fas fa-book-open text-indigo-600 text-5xl\'></i>'">
                             </div>
                             <h1 class="text-4xl font-black text-slate-800 mb-2">ישיבת אשרינו</h1>
                             <p class="text-slate-500 mb-8 font-medium">מרחב למידה דיגיטלי מתקדם</p>
-                            
+
                             <div class="space-y-5 text-right">
                                 <div>
                                     <label class="block text-sm font-bold text-slate-700 mb-2 ml-1">מספר משתמש (ת"ז)</label>
@@ -706,7 +651,7 @@
                 const user = userId ? mockDataStore.users.find(u => u.id === userId) : { id: '', name: '', password: '', role: 'student', className: '' };
                 const modalId = 'admin-user-modal';
                 const classOptions = [''].concat(mockDataStore.classes).map(c => `<option value="${c}" ${user.className === c ? 'selected' : ''}>${c || 'ללא שיוך'}</option>`).join('');
-                
+
                 const html = `
                     <div id="${modalId}" class="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center backdrop-blur-sm p-4" dir="rtl">
                         <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
@@ -761,7 +706,7 @@
                 const className = document.getElementById('m-user-class').value;
 
                 if (!name || !newId || !password) return this.showToast('יש למלא את כל שדות החובה', 'error');
-                
+
                 if (originalId) {
                     if (newId !== originalId && mockDataStore.users.some(u => u.id === newId)) {
                         return this.showToast('מספר משתמש (ת"ז) זה כבר קיים במערכת!', 'error');
@@ -773,12 +718,12 @@
                         u.password = password;
                         u.role = role;
                         u.className = className;
-                        
+
                         if (newId !== originalId) {
                             mockDataStore.grades.forEach(g => { if(g.studentId === originalId) g.studentId = newId; });
-                            mockDataStore.chat.forEach(c => { 
-                                if(c.from === originalId) c.from = newId; 
-                                if(c.to === originalId) c.to = newId; 
+                            mockDataStore.chat.forEach(c => {
+                                if(c.from === originalId) c.from = newId;
+                                if(c.to === originalId) c.to = newId;
                             });
                         }
                     }
@@ -786,7 +731,7 @@
                     if (mockDataStore.users.some(u => u.id === newId)) return this.showToast('תעודת זהות זו כבר קיימת במערכת!', 'error');
                     mockDataStore.users.push({ id: newId, name, password, role, className, lastLogin: '', notebooks: [] });
                 }
-                
+
                 document.getElementById('admin-user-modal').remove();
                 this.syncToCloud();
                 this.showToast('הנתונים נשמרו בהצלחה', 'success');
@@ -834,7 +779,7 @@
 
                 const classTeachers = mockDataStore.users.filter(u => u.className === className && u.role === 'teacher');
                 const classStudents = mockDataStore.users.filter(u => u.className === className && u.role === 'student');
-                
+
                 const availableTeachers = mockDataStore.users.filter(u => u.className !== className && u.role === 'teacher');
                 const availableStudents = mockDataStore.users.filter(u => u.className !== className && u.role === 'student');
 
@@ -916,16 +861,16 @@
                                 ${notices.length ? notices.map(n => `
                                     <div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md transition">
                                         <div class="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
-                                            <h4 class="font-black text-slate-800 text-lg">${window.DOMPurify ? DOMPurify.sanitize(n.title) : n.title}</h4>
+                                            <h4 class="font-black text-slate-800 text-lg">${DOMPurify.sanitize(n.title)}</h4>
                                             <button onclick="appState.showConfirm('למחוק הודעה זו?', () => { mockDataStore.notices = mockDataStore.notices.filter(x => x.id !== ${n.id}); appState.syncToCloud(); appState.render(); })" class="text-rose-400 hover:bg-rose-100 w-8 h-8 flex items-center justify-center rounded-lg transition"><i class="fas fa-trash"></i></button>
                                         </div>
-                                        <p class="text-sm text-slate-700 leading-relaxed font-medium">${window.DOMPurify ? DOMPurify.sanitize(n.content) : n.content}</p>
+                                        <p class="text-sm text-slate-700 leading-relaxed font-medium">${DOMPurify.sanitize(n.content)}</p>
                                         <div class="text-[10px] text-slate-400 mt-2 font-bold">${n.date}</div>
                                     </div>
                                 `).join('') : '<div class="text-center text-slate-500 mt-10 font-bold bg-white p-4 rounded-xl shadow-sm">אין הודעות פעילות כרגע.</div>'}
                             </div>
                         </div>
-                        
+
                         <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4 h-[400px] lg:h-auto">
                             <div class="flex items-center gap-3 border-b border-slate-100 pb-3">
                                 <div class="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-lg"><i class="fas fa-pen-fancy"></i></div>
@@ -999,14 +944,14 @@
                 const title = document.getElementById('admin-notice-title').value.trim();
                 const content = document.getElementById('admin-notice-content').value.trim();
                 if (!title || !content) return this.showToast('יש למלא כותרת ותוכן להודעה', 'error');
-                
+
                 mockDataStore.notices.unshift({
                     id: Date.now(),
                     title,
                     content,
                     date: new Date().toLocaleDateString('he-IL')
                 });
-                
+
                 this.syncToCloud();
                 this.showToast('ההודעה פורסמה בהצלחה', 'success');
                 this.render();
@@ -1015,12 +960,12 @@
             async adminGenerateNoticeAI() {
                 const titleInput = document.getElementById('admin-notice-title');
                 const contentInput = document.getElementById('admin-notice-content');
-                
+
                 if (!titleInput.value.trim()) return this.showToast('אנא הקלד נושא בכותרת', 'error');
-                
+
                 contentInput.value = 'טוען נוסח מותאם...';
                 const prompt = `כתוב מודעה רשמית, קצרה וברורה (עד שני משפטים) שתופיע בלוח מודעות דיגיטלי של הישיבה בנושא: "${titleInput.value}". השתמש בשפה מכובדת וראויה.`;
-                
+
                 const response = await callGeminiAPI(prompt);
                 contentInput.value = response.replace(/"/g, '').trim();
             },
@@ -1029,7 +974,7 @@
             renderTeacher() {
                 const cls = this.currentUser.className || '';
                 if(!cls) return `<div class="flex items-center justify-center h-full text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
-                
+
                 return `
                     <div class="flex flex-col h-full bg-slate-50/50">
                         <div class="flex border-b border-slate-200 bg-white px-6 pt-3 gap-4 shrink-0 shadow-sm z-10 overflow-x-auto">
@@ -1093,7 +1038,7 @@
                         <div class="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-2xl border border-indigo-200 p-4 shadow-sm flex flex-col relative overflow-hidden h-[500px] lg:h-full">
                             <h3 class="font-black text-indigo-900 mb-2 flex items-center gap-2"><i class="fas fa-brain"></i> סייע בניית שאלות (AI)</h3>
                             <p class="text-xs text-indigo-700 mb-3 shrink-0">בחר מקורות מידע, והמודל ייצר עבורך שאלות חזרה לחומר הנלמד.</p>
-                            
+
                             <div class="bg-white rounded-xl border border-indigo-200 p-3 mb-3 shrink-0">
                                 <label class="block text-xs font-bold text-slate-600 mb-2">בחר חומר לניתוח:</label>
                                 <div class="max-h-32 overflow-y-auto space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
@@ -1107,7 +1052,7 @@
                                     `).join('')}
                                 </div>
                             </div>
-                            
+
                             <button onclick="appState.generateAIQuestions()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-md transition flex justify-center items-center gap-2 text-sm shrink-0">
                                 <i class="fas fa-magic"></i> חולל שאלות
                             </button>
@@ -1212,9 +1157,9 @@
                 let chatHistory = [];
                 let headerTitle = 'הודעה לכלל הכיתה (שידור)';
                 let headerSubtitle = 'ההודעה תשלח לכל התלמידים בכיתה';
-                
+
                 if(selected === 'all') {
-                    chatHistory = mockDataStore.chat.filter(c => c.to === 'all' || (c.to === 'student' && c.from === 'teacher')); 
+                    chatHistory = mockDataStore.chat.filter(c => c.to === 'all' || (c.to === 'student' && c.from === 'teacher'));
                 } else {
                     const student = myStudents.find(s => s.id === selected);
                     if(student) {
@@ -1340,7 +1285,7 @@
                 if(!input || !input.value.trim()) return;
                 const now = new Date();
                 const timeStr = `${now.toLocaleDateString('he-IL')} ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
-                
+
                 const toId = this.currentView === 'teacher' ? this.chatSelectedUser : 'teacher';
 
                 mockDataStore.chat.push({
@@ -1350,16 +1295,16 @@
                     text: input.value.trim(),
                     date: timeStr
                 });
-                
+
                 input.value = '';
                 this.syncToCloud();
-                
+
                 if (this.currentView === 'teacher') {
                     this.updateChatUIOnly();
                 } else {
                      this.updateChatUIOnly();
                 }
-                
+
                 setTimeout(() => {
                     const winId = this.currentView === 'teacher' ? 'teacher-chat-window' : 'student-chat-window';
                     const win = document.getElementById(winId);
@@ -1407,7 +1352,7 @@
             viewArchive() {
                 const cls = this.currentUser.className;
                 const archives = mockDataStore.archives[cls] || [];
-                
+
                 const modalHtml = `
                     <div id="archive-modal" class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
                         <div class="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
@@ -1420,7 +1365,7 @@
                                     <div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex flex-col gap-3">
                                         <div class="flex justify-between items-start border-b pb-2">
                                             <div>
-                                                <h4 class="font-bold text-lg text-slate-800">${window.DOMPurify ? DOMPurify.sanitize(a.title) : a.title}</h4>
+                                                <h4 class="font-bold text-lg text-slate-800">${DOMPurify.sanitize(a.title)}</h4>
                                                 <span class="text-xs text-slate-500">${a.date}</span>
                                             </div>
                                             <button onclick="appState.downloadArchive(${a.id})" class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-200 flex items-center gap-2">
@@ -1428,7 +1373,7 @@
                                             </button>
                                         </div>
                                         <div class="text-slate-700 text-sm font-serif leading-relaxed" id="archive-content-${a.id}">
-                                            ${window.DOMPurify ? DOMPurify.sanitize(a.content) : a.content}
+                                            ${DOMPurify.sanitize(a.content)}
                                         </div>
                                     </div>
                                 `).join('') : '<div class="text-center text-slate-500 py-8 font-medium">הארכיון ריק כעת.</div>'}
@@ -1443,7 +1388,7 @@
                 const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body dir='rtl' style='font-family: Arial, sans-serif;'>";
                 const footer = "</body></html>";
                 const sourceHTML = header + html + footer;
-                
+
                 const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -1452,7 +1397,7 @@
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                
+
                 this.showToast('הקובץ הורד בהצלחה', 'success');
             },
 
@@ -1461,8 +1406,8 @@
                 const archives = mockDataStore.archives[cls] || [];
                 const archive = archives.find(a => a.id === id);
                 if(archive) {
-                    const safeTitle = window.DOMPurify ? DOMPurify.sanitize(archive.title) : archive.title;
-                    const safeContent = window.DOMPurify ? DOMPurify.sanitize(archive.content) : archive.content;
+                    const safeTitle = DOMPurify.sanitize(archive.title);
+                    const safeContent = DOMPurify.sanitize(archive.content);
                     const formattedHtml = `
                         <div style="text-align: center; margin-bottom: 20px;">
                             <h1 style="color: #1e3a8a;">${safeTitle}</h1>
@@ -1480,12 +1425,12 @@
             async generateAIQuestions() {
                 const cls = this.currentUser.className;
                 let textContext = "";
-                
+
                 const liveCheck = document.getElementById('ai-src-live');
                 if (liveCheck && liveCheck.checked) {
                     textContext += "תוכן הלוח החי הנוכחי:\n" + (mockDataStore.liveContent[cls] || "") + "\n\n";
                 }
-                
+
                 const archiveChecks = document.querySelectorAll('.ai-src-archive:checked');
                 archiveChecks.forEach(chk => {
                     const id = parseInt(chk.value);
@@ -1505,7 +1450,7 @@
                 const resDiv = document.getElementById('teacher-ai-questions');
                 resDiv.classList.remove('hidden');
                 resDiv.innerHTML = '<div class="flex items-center gap-2 justify-center text-indigo-600 font-bold py-4"><i class="fas fa-circle-notch fa-spin text-xl"></i> Gemini מעבד שאלות...</div>';
-                
+
                 const prompt = `קרא את חומר הלימוד הבא וצור ממנו 3 שאלות אמריקאיות לחזרה:\n${plainText}`;
                 const questionsData = await callGeminiJSON(prompt);
 
@@ -1519,12 +1464,12 @@
                     htmlOut += `<div>
                         <div class="font-bold text-slate-800 mb-1">${idx + 1}. ${q.question}</div>
                         <ul class="text-slate-600 pr-4 space-y-1 list-disc">`;
-                    
+
                     q.options.forEach((opt, optIdx) => {
                         const isCorrect = optIdx === q.correctOptionIndex;
                         htmlOut += `<li class="${isCorrect ? 'text-emerald-600 font-bold' : ''}">${opt}${isCorrect ? ' (נכון)' : ''}</li>`;
                     });
-                    
+
                     htmlOut += `</ul></div>`;
                 });
                 htmlOut += `</div>`;
@@ -1539,7 +1484,7 @@
 
                 const cls = this.currentUser.className;
                 const classGrades = mockDataStore.grades.filter(g => mockDataStore.users.find(u => u.id === g.studentId)?.className === cls);
-                
+
                 let textData = `ציוני כיתה ${cls}:\n`;
                 classGrades.forEach(g => {
                     const sName = mockDataStore.users.find(u => u.id === g.studentId)?.name || 'תלמיד';
@@ -1569,7 +1514,7 @@
                 const inputId = role === 'teacher' ? 'teacher-chat-input' : 'student-chat-input';
                 const input = document.getElementById(inputId);
                 const originalText = input.value.trim();
-                
+
                 if (!originalText) return this.showToast('יש להקליד טקסט תחילה', 'error');
 
                 input.disabled = true;
@@ -1579,7 +1524,7 @@
 
                 const prompt = `שכתב את ההודעה הבאה כך שתהיה בשפה עברית גבוהה, מכובדת וראויה לישיבה:\n"${originalText}"`;
                 const response = await callGeminiAPI(prompt);
-                
+
                 input.disabled = false;
                 input.placeholder = originalPlaceholder;
                 input.value = response.replace(/"/g, '').trim();
@@ -1589,14 +1534,14 @@
             async generateLessonDraftAI() {
                 this.showPrompt('הזן נושא או מושג למערך השיעור:', '', async (topic) => {
                     if (!topic || !topic.trim()) return;
-                    
+
                     const editor = document.getElementById('teacher-live-editor');
                     editor.innerHTML = '<div class="text-indigo-500 font-bold flex items-center justify-center h-full gap-3 text-xl"><i class="fas fa-spinner fa-spin"></i> Gemini מנסח מערך שיעור...</div>';
-                    
+
                     const prompt = `כתוב מערך שיעור מובנה בפורמט HTML (עם <h3> ו-<ul>) בנושא: "${topic}". בשפה תורנית ומכובדת.`;
                     let response = await callGeminiAPI(prompt);
                     response = response.replace(/```html/g, '').replace(/```/g, '').trim();
-                    
+
                     editor.innerHTML = response;
                     this.updateLiveContent(response);
                     this.showToast('מערך השיעור נוצר בהצלחה!', 'success');
@@ -1607,7 +1552,7 @@
             renderStudent() {
                 const cls = this.currentUser.className || '';
                 if(!cls) return `<div class="flex items-center justify-center h-full text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
-                
+
                 setTimeout(() => this.animateStudentAverage(), 100);
 
                 return `
@@ -1631,7 +1576,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         <div class="flex-1 overflow-y-auto p-4 relative" id="student-main-area">
                             ${this.studentTab === 'live' ? this.renderStudentLiveTab(cls) : this.studentTab === 'grades' ? this.renderStudentGradesTab() : this.renderStudentChatTab()}
                         </div>
@@ -1647,7 +1592,7 @@
                             </div>
                             <div class="flex-1 overflow-auto p-6 protected-content bg-amber-50 relative">
                                 <div id="student-live-view-content" class="prose prose-lg rtl text-slate-800 font-serif max-w-none">
-                                    ${window.DOMPurify ? DOMPurify.sanitize(mockDataStore.liveContent[cls]) : (mockDataStore.liveContent[cls] || 'המורה טרם החל לכתוב בלוח...')}
+                                    ${DOMPurify.sanitize(mockDataStore.liveContent[cls] || 'המורה טרם החל לכתוב בלוח...')}
                                 </div>
                             </div>
                         </div>
@@ -1680,7 +1625,7 @@
                                     <i class="fas fa-plus"></i> הוסף מחברת
                                 </button>
                             </div>
-                            
+
                             <div class="bg-white p-0 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden flex-1 flex flex-col">
                                 <div class="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center shrink-0">
                                     <h3 id="viewer-title" class="font-black text-slate-700 flex items-center gap-2">
@@ -1696,7 +1641,7 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] md:h-full">
                             <div class="bg-teal-600 p-4 border-b flex items-center gap-3 shrink-0">
                                 <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white"><i class="fas fa-robot"></i></div>
@@ -1704,8 +1649,8 @@
                             </div>
                             <div class="p-4 bg-teal-50/50 flex-1 overflow-y-auto flex flex-col gap-4" id="student-tutor-chat">
                                 <div class="bg-white border border-teal-100 p-4 rounded-2xl text-sm text-slate-700 font-medium">
-                                    ${this.aiEnabledForStudents ? 
-                                        `שלום ${this.currentUser.name}! אני כאן לעזור. שאל אותי כל שאלה על החומר שנלמד בלוח.` : 
+                                    ${this.aiEnabledForStudents ?
+                                        `שלום ${this.currentUser.name}! אני כאן לעזור. שאל אותי כל שאלה על החומר שנלמד בלוח.` :
                                         'הגישה לסייע נחסמה על ידי המורה.'}
                                 </div>
                             </div>
@@ -1760,8 +1705,8 @@
             renderStudentChatTab() {
                 const teacher = mockDataStore.users.find(u => u.role === 'teacher' && u.className === this.currentUser.className);
                 const teacherName = teacher ? teacher.name : 'מורה';
-                const chatHistory = mockDataStore.chat.filter(c => 
-                    (c.from === this.currentUser.id && c.to === 'teacher') || 
+                const chatHistory = mockDataStore.chat.filter(c =>
+                    (c.from === this.currentUser.id && c.to === 'teacher') ||
                     (c.from === 'teacher' && c.to === this.currentUser.id) ||
                     (c.from === 'teacher' && c.to === 'all')
                 );
@@ -1810,7 +1755,7 @@
 
                 const sum = myGrades.reduce((a, b) => a + b.grade, 0);
                 const avg = Math.round(sum / myGrades.length);
-                
+
                 let current = 0;
                 const increment = avg > 50 ? 2 : 1;
                 const timer = setInterval(() => {
@@ -1818,12 +1763,12 @@
                     if(current >= avg) {
                         current = avg;
                         clearInterval(timer);
-                        
+
                         if(avg >= 95) avgEmoji.innerText = '🏆';
                         else if(avg >= 85) avgEmoji.innerText = '⭐';
                         else if(avg >= 70) avgEmoji.innerText = '👍';
                         else avgEmoji.innerText = '💪';
-                        
+
                         if(avg >= 90) avgVal.className = 'text-emerald-500';
                         else if(avg >= 75) avgVal.className = 'text-blue-500';
                         else if(avg >= 60) avgVal.className = 'text-amber-500';
@@ -1837,7 +1782,7 @@
                 const iframe = document.getElementById('notebook-iframe');
                 const placeholder = document.getElementById('viewer-placeholder');
                 const title = document.getElementById('viewer-title');
-                
+
                 if (iframe && placeholder && title) {
                     placeholder.classList.add('hidden');
                     iframe.classList.remove('hidden');
@@ -1849,16 +1794,16 @@
             addNewStudentNotebook() {
                 this.showPrompt('שם המחברת החדשה (למשל: מסכת בבא קמא):', '', (name) => {
                     if (!name || !name.trim()) return;
-                    
+
                     if (!GAS_WEB_APP_URL || GAS_WEB_APP_URL.includes("הכנס_כאן")) {
                         this.showToast('שגיאה: יש להגדיר את קישור שרת ה-API בקוד ה-HTML', 'error');
                         return;
                     }
 
                     this.showToast('יוצר מחברת בחשבון הדרייב המאובטח, נא להמתין...', 'success');
-                    
+
                     const callbackName = 'jsonpCallback_' + Math.round(100000 * Math.random());
-                    
+
                     window[callbackName] = (result) => {
                         delete window[callbackName];
                         const scriptEl = document.getElementById(callbackName);
@@ -1869,7 +1814,7 @@
                             if (userInStore) {
                                 if (!userInStore.notebooks) userInStore.notebooks = [];
                                 userInStore.notebooks.push(result.notebook);
-                                
+
                                 this.currentUser = userInStore;
                                 this.syncToCloud();
                                 this.showToast('המחברת נוצרה בהצלחה!', 'success');
@@ -1882,14 +1827,14 @@
 
                     const script = document.createElement('script');
                     script.id = callbackName;
-                    
+
                     const params = new URLSearchParams({
                         action: 'createNotebook',
-                        studentId: this.currentUser.name, 
+                        studentId: this.currentUser.name,
                         notebookName: name.trim(),
                         callback: callbackName
                     });
-                    
+
                     script.src = `${GAS_WEB_APP_URL}?${params.toString()}`;
                     document.body.appendChild(script);
                 });
@@ -1898,11 +1843,11 @@
             async summarizeLessonAI() {
                 const cls = this.currentUser.className;
                 const liveText = mockDataStore.liveContent[cls] || '';
-                
+
                 const div = document.createElement("div");
                 div.innerHTML = liveText;
                 const plainText = div.textContent || div.innerText || "";
-                
+
                 if(!plainText.trim() || plainText.length < 20) {
                     return this.showToast('אין מספיק חומר בלוח כדי לסכם', 'error');
                 }
@@ -1925,7 +1870,7 @@
                 chat.innerHTML += `
                     <div class="bg-gradient-to-br from-white to-teal-50 border border-teal-200 p-4 rounded-2xl text-sm text-slate-700 font-medium max-w-[95%] self-start shadow-sm">
                         <h4 class="font-bold text-teal-700 border-b border-teal-100 pb-2 mb-2 flex items-center gap-2"><i class="fas fa-bolt"></i> סיכום השיעור</h4>
-                        ${window.DOMPurify ? DOMPurify.sanitize(answer.replace(/\n/g, '<br>')) : answer.replace(/\n/g, '<br>')}
+                        ${DOMPurify.sanitize(answer.replace(/\n/g, '<br>'))}
                     </div>
                 `;
                 chat.scrollTop = chat.scrollHeight;
@@ -1943,10 +1888,10 @@
 
                 chat.innerHTML += `
                     <div class="bg-teal-100 text-teal-900 border border-teal-200 p-3 rounded-2xl text-sm font-medium max-w-[85%] self-end">
-                        ${window.DOMPurify ? DOMPurify.sanitize(q) : q}
+                        ${DOMPurify.sanitize(q)}
                     </div>
                 `;
-                
+
                 const loadingId = 'loading-' + Date.now();
                 chat.innerHTML += `
                     <div id="${loadingId}" class="bg-white border border-teal-100 p-3 rounded-2xl text-sm text-slate-500 font-bold max-w-[90%] self-start flex items-center gap-2">
@@ -1970,7 +1915,7 @@
                 chat.innerHTML += `
                     <div class="bg-white border border-teal-100 p-4 rounded-2xl text-sm text-slate-700 font-medium max-w-[90%] self-start">
                         <i class="fas fa-robot text-teal-500 mr-2 block text-lg"></i>
-                        ${window.DOMPurify ? DOMPurify.sanitize(answer.replace(/\n/g, '<br>')) : answer.replace(/\n/g, '<br>')}
+                        ${DOMPurify.sanitize(answer.replace(/\n/g, '<br>'))}
                     </div>
                 `;
                 chat.scrollTop = chat.scrollHeight;
@@ -1979,7 +1924,7 @@
             initDraggableBoard() {
                 const board = document.getElementById('student-floating-board');
                 const handle = document.getElementById('board-drag-handle');
-                
+
                 if (!board || !handle) return;
 
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
@@ -1989,10 +1934,10 @@
                 function dragMouseDown(e) {
                     e = e || window.event;
                     if(e.type !== 'touchstart') e.preventDefault();
-                    
+
                     pos3 = e.clientX || (e.touches && e.touches[0].clientX);
                     pos4 = e.clientY || (e.touches && e.touches[0].clientY);
-                    
+
                     document.onmouseup = closeDragElement;
                     document.onmousemove = elementDrag;
                     document.ontouchend = closeDragElement;
@@ -2002,7 +1947,7 @@
                 function elementDrag(e) {
                     e = e || window.event;
                     if(e.type !== 'touchmove') e.preventDefault();
-                    
+
                     const clientX = e.clientX || (e.touches && e.touches[0].clientX);
                     const clientY = e.clientY || (e.touches && e.touches[0].clientY);
 
@@ -2010,7 +1955,7 @@
                     pos2 = pos4 - clientY;
                     pos3 = clientX;
                     pos4 = clientY;
-                    
+
                     board.style.top = (board.offsetTop - pos2) + "px";
                     board.style.left = (board.offsetLeft - pos1) + "px";
                 }
@@ -2026,19 +1971,25 @@
             zoomBoard(direction) {
                 const content = document.getElementById('student-live-view-content');
                 if (!content) return;
-                
+
                 if (direction === 'in') {
                     this.zoomLevel = Math.min(this.zoomLevel + 0.1, 2.5);
                 } else if (direction === 'out') {
                     this.zoomLevel = Math.max(this.zoomLevel - 0.1, 0.5);
                 }
-                
+
                 content.style.transform = `scale(${this.zoomLevel})`;
                 content.style.transformOrigin = 'top right';
             }
         };
 
-        window.onload = () => appState.init();
+        window.onload = () => {
+            if (!window.DOMPurify) {
+                window.onerror('Required sanitizer failed to load', window.location.href, 0, 0);
+                return;
+            }
+            appState.init();
+        };
     </script>
 </body>
 </html>
