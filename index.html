@@ -1396,9 +1396,12 @@
                                                     <span class="text-base">${s.name}</span>
                                                     <div class="flex flex-wrap gap-1">
                                                         ${(s.notebooks || []).map(nb => `
-                                                            <button onclick="appState.openStudentNotebookModal('${escJs(nb.url)}', '${escJs(nb.name)}', '${escJs(s.name)}')" class="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded hover:bg-indigo-100 transition shadow-sm font-bold truncate max-w-[120px]" title="${DOMPurify.sanitize(nb.name)}">
-                                                                <i class="fas fa-book-open"></i> ${nb.name}
-                                                            </button>
+                                                            <span class="inline-flex items-center gap-0.5">
+                                                                <button onclick="appState.openStudentNotebookModal('${escJs(nb.url)}', '${escJs(nb.name)}', '${escJs(s.name)}')" class="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded hover:bg-indigo-100 transition shadow-sm font-bold truncate max-w-[120px]" title="${DOMPurify.sanitize(nb.name)}">
+                                                                    <i class="fas fa-book-open"></i> ${nb.name}
+                                                                </button>
+                                                                <button onclick="appState.deleteStudentNotebook('${escJs(s.id)}', '${escJs(nb.url)}', '${escJs(nb.name)}')" class="text-[11px] bg-rose-50 text-rose-600 border border-rose-200 w-5 h-5 rounded hover:bg-rose-100 transition flex items-center justify-center shrink-0" title="מחק מחברת"><i class="fas fa-times"></i></button>
+                                                            </span>
                                                         `).join('')}
                                                         ${!(s.notebooks || []).length ? '<span class="text-xs text-slate-400 font-medium">לא יצר מחברות</span>' : ''}
                                                     </div>
@@ -1440,6 +1443,19 @@
                         </div>
                     </div>`;
                 document.getElementById('dynamic-modals').insertAdjacentHTML('beforeend', html);
+            },
+
+            deleteStudentNotebook(studentId, notebookUrl, notebookName) {
+                if (this.currentView !== 'teacher' && this.currentView !== 'admin') return;
+                this.showConfirm(`האם למחוק את המחברת "${notebookName}"?`, () => {
+                    const student = mockDataStore.users.find(u => u.id === studentId);
+                    if (!student || !Array.isArray(student.notebooks)) return;
+                    student.notebooks = student.notebooks.filter(nb => nb.url !== notebookUrl);
+                    if (this.currentUser && this.currentUser.id === studentId) this.currentUser = student;
+                    this.syncToCloud();
+                    this.showToast('המחברת נמחקה', 'success');
+                    this.render();
+                });
             },
 
             renderTeacherChatTab(cls) {
