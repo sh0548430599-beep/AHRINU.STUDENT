@@ -2095,7 +2095,7 @@
             },
 
             addNewStudentNotebook() {
-                this.showPrompt('שם המחברת החדשה (למשל: מסכת בבא קמא):', '', (name) => {
+                this.showPrompt('שם המחברת החדשה (למשל: מסכת בבא קמא):', '', async (name) => {
                     if (!name || !name.trim()) return;
 
                     if (!GAS_WEB_APP_URL || GAS_WEB_APP_URL.includes("הכנס_כאן")) {
@@ -2105,14 +2105,23 @@
 
                     this.showToast('יוצר מחברת בחשבון הדרייב המאובטח, נא להמתין...', 'success');
 
-                    const callbackName = 'jsonpCallback_' + Math.round(100000 * Math.random());
+                    // Use fetch (like the Gemini call) instead of a JSONP <script>. An injected
+                    // script can be silently blocked (ad/privacy blockers, strict browsers) and
+                    // then never calls back, leaving the UI stuck on "creating..." forever. fetch
+                    // has a real timeout and error path; the endpoint returns JSON with
+                    // Access-Control-Allow-Origin: *.
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 30000);
+                    try {
+                        const params = new URLSearchParams({
+                            action: 'createNotebook',
+                            studentId: this.currentUser.name,
+                            notebookName: name.trim()
+                        });
+                        const response = await fetch(`${GAS_WEB_APP_URL}?${params.toString()}`, { signal: controller.signal });
+                        const result = await response.json();
 
-                    window[callbackName] = (result) => {
-                        delete window[callbackName];
-                        const scriptEl = document.getElementById(callbackName);
-                        if (scriptEl) scriptEl.remove();
-
-                        if (result.success) {
+                        if (result && result.success) {
                             const userInStore = mockDataStore.users.find(u => u.id === this.currentUser.id);
                             if (userInStore) {
                                 if (!userInStore.notebooks) userInStore.notebooks = [];
@@ -2124,22 +2133,13 @@
                                 this.render();
                             }
                         } else {
-                            this.showToast('שגיאה מהשרת: ' + result.error, 'error');
+                            this.showToast('שגיאה מהשרת: ' + ((result && result.error) || 'לא התקבלה תשובה תקינה'), 'error');
                         }
-                    };
-
-                    const script = document.createElement('script');
-                    script.id = callbackName;
-
-                    const params = new URLSearchParams({
-                        action: 'createNotebook',
-                        studentId: this.currentUser.name,
-                        notebookName: name.trim(),
-                        callback: callbackName
-                    });
-
-                    script.src = `${GAS_WEB_APP_URL}?${params.toString()}`;
-                    document.body.appendChild(script);
+                    } catch (e) {
+                        this.showToast('יצירת המחברת נכשלה (אין תגובה מהשרת). בדקו את החיבור לאינטרנט ונסו שוב.', 'error');
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
                 });
             },
 
