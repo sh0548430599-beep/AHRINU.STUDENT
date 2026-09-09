@@ -274,27 +274,41 @@
                                 const aiSettingChanged = this.currentView === 'student' &&
                                     studentClass &&
                                     previousAiEnabled !== this.isAiEnabledForStudents(studentClass);
-
-                                if (aiSettingChanged) {
-                                    this.render();
-                                } else {
-                                    this.updateDynamicUI();
-                                }
-
-                                if (liveContentChanged && mockDataStore.liveContent[studentClass]) {
-                                    setTimeout(() => this.showFloatingBoard(), 0);
-                                }
-                                mockDataStore = cloudData.mockDataStore;
                                 const chatGrew = Array.isArray(mockDataStore.chat) && mockDataStore.chat.length > previousChatLength;
                                 const onChatTab = (this.currentView === 'teacher' && this.teacherTab === 'chat') ||
                                     (this.currentView === 'student' && this.studentTab === 'chat');
+
+                                // Toggling the AI control changes disabled states that only a full render reflects.
+                                if (aiSettingChanged) {
+                                    this.render();
+                                    return;
+                                }
+
+                                // On the chat tab, reconcile messages/board/notices in place (never full-render).
                                 if (onChatTab) {
                                     this.updateChatUIOnly();
                                     this.updateLiveBoardUIOnly();
                                     this.updateNoticesUIOnly();
                                     if (chatGrew) this.scrollActiveChatToBottom();
+                                    if (liveContentChanged && mockDataStore.liveContent[studentClass]) {
+                                        setTimeout(() => this.showFloatingBoard(), 0);
+                                    }
                                     return;
                                 }
+
+                                // A live broadcast must NOT rebuild the student view: a full render would
+                                // close an open notebook and restart the grades animation. The teacher's
+                                // live editor emits a snapshot on every keystroke, so update the board in place.
+                                if (liveContentChanged) {
+                                    this.updateLiveBoardUIOnly();
+                                    this.updateNoticesUIOnly();
+                                    if (mockDataStore.liveContent[studentClass]) {
+                                        setTimeout(() => this.showFloatingBoard(), 0);
+                                    }
+                                    return;
+                                }
+
+                                // Any other data change: reconcile the UI.
                                 this.updateDynamicUI();
                             }
                         });
