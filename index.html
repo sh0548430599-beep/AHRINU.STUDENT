@@ -268,6 +268,12 @@
                                     this.currentUser = mockDataStore.users.find(user => user.id === currentUserId) || this.currentUser;
                                 }
 
+                                // Restore a persisted session once user data has loaded (survives page refresh).
+                                if (!this.currentUser && this.restoreSessionFromCloud()) {
+                                    this.render();
+                                    return;
+                                }
+
                                 const liveContentChanged = this.currentView === 'student' &&
                                     studentClass &&
                                     previousLiveContent !== (mockDataStore.liveContent[studentClass] || '');
@@ -325,10 +331,14 @@
                 }, 800);
             },
 
+            getSavedViewerId() {
+                try { return localStorage.getItem('ahrinuViewerId'); } catch (e) { return null; }
+            },
+
             restoreSessionFromCloud() {
-                const viewer = window.cloudStorage?.getViewer?.();
-                if (!viewer?.id) return false;
-                const user = mockDataStore.users?.find(u => u.id === viewer.id);
+                const savedId = (window.cloudStorage?.getViewer?.() || {}).id || this.getSavedViewerId();
+                if (!savedId) return false;
+                const user = mockDataStore.users?.find(u => u.id === savedId);
                 if (!user) return false;
                 this.currentUser = user;
                 this.currentView = user.role;
@@ -687,6 +697,7 @@
                     user.lastLogin = `${now.toLocaleDateString('he-IL')} ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
                     this.currentUser = user;
                     this.currentView = user.role;
+                    try { localStorage.setItem('ahrinuViewerId', user.id); } catch (e) {}
                     this.syncToCloud();
                     this.render();
                     this.showToast(`ברוך הבא, ${user.name}`);
@@ -698,6 +709,7 @@
             logout() {
                 this.currentUser = null;
                 this.currentView = 'login';
+                try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
                 this.render();
             },
 
