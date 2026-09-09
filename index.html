@@ -245,6 +245,9 @@
                         window.cloudStorage.listenData((cloudData) => {
                             if (cloudData && cloudData.mockDataStore) {
                                 const className = this.currentUser?.className;
+                                const studentClass = className;
+                                const incomingStore = cloudData.mockDataStore;
+                                const previousAiEnabled = this.isAiEnabledForStudents(studentClass);
                                 const previousLiveContent = className ? mockDataStore.liveContent?.[className] || '' : '';
                                 const incomingLiveContent = className ? cloudData.mockDataStore.liveContent?.[className] || '' : '';
                                 const shouldOpenLiveBoard = this.currentView === 'student' &&
