@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     <title>ישיבת אשרינו LMS</title>
+    <meta name="theme-color" content="#1e293b">
+    <link rel="icon" type="image/png" sizes="64x64" href="./assets/favicon-64.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
     <link rel="preload" href="./assets/fonts/heebo-hebrew-f1f7cfaef594.woff2" as="font" type="font/woff2" crossorigin>
-    <link href="./assets/tailwind-2dc362d6026d.min.css" rel="stylesheet">
+    <link href="./assets/tailwind-9b096270d690.min.css" rel="stylesheet">
     <link href="./assets/icons-52930673420b.min.css" rel="stylesheet">
     <script src="./assets/purify-3.0.6.min.js"></script>
     <style>
@@ -32,9 +36,31 @@
             background-color: #f8fafc;
         }
 
-        .protected-content {
+        .protected-content,
+        .no-copy,
+        .no-copy * {
             user-select: none;
             -webkit-user-select: none;
+            -ms-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        /* Teacher archive list shows only the first five lines of a lesson. */
+        .archive-preview {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 5;
+            line-clamp: 5;
+            overflow: hidden;
+            max-height: calc(1.75em * 5);
+        }
+
+        .archive-preview.expanded {
+            display: block;
+            -webkit-line-clamp: unset;
+            line-clamp: unset;
+            max-height: none;
+            overflow: visible;
         }
 
         .toast {
@@ -77,7 +103,7 @@
         }
     </style>
 </head>
-<body class="text-slate-800 h-screen flex flex-col overflow-hidden notranslate" translate="no">
+<body class="text-slate-800 min-h-screen flex flex-col overflow-x-hidden notranslate" translate="no">
 
     <div id="error-screen" class="hidden fixed inset-0 bg-rose-600 z-[99999] flex-col items-center justify-center text-white p-8">
         <i class="fas fa-exclamation-triangle text-6xl mb-4"></i>
@@ -100,14 +126,14 @@
         };
     </script>
 
-    <div id="app" class="h-full flex flex-col w-full relative">
+    <div id="app" class="min-h-screen flex flex-col w-full relative">
         <div class="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-4">
             <div class="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             <h2 class="text-xl font-bold text-slate-700">מכין סביבת למידה...</h2>
         </div>
     </div>
 
-    <script type="module" src="./assets/firebase-storage-23d0bffc8150.min.js"></script>
+    <script type="module" src="./assets/firebase-storage-fb3ad015887e.min.js"></script>
 
     <script>
         // כתובת שרת ה-API המאובטח (Google Apps Script)
@@ -265,7 +291,18 @@
 
                                 const currentUserId = this.currentUser?.id;
                                 if (currentUserId) {
-                                    this.currentUser = mockDataStore.users.find(user => user.id === currentUserId) || this.currentUser;
+                                    const freshUser = mockDataStore.users.find(user => user.id === currentUserId);
+                                    if (freshUser) {
+                                        this.clearMissingUserTimer();
+                                        this.currentUser = freshUser;
+                                        if (freshUser.role && this.currentView !== freshUser.role) {
+                                            this.currentView = freshUser.role;
+                                        }
+                                    } else {
+                                        // Data may simply be mid-sync: only a user that stays
+                                        // missing is treated as removed.
+                                        this.scheduleMissingUserCheck();
+                                    }
                                 }
 
                                 // Restore a persisted session once user data has loaded (survives page refresh).
@@ -333,6 +370,28 @@
 
             getSavedViewerId() {
                 try { return localStorage.getItem('ahrinuViewerId'); } catch (e) { return null; }
+            },
+
+            clearMissingUserTimer() {
+                if (this._missingUserTimer) {
+                    clearTimeout(this._missingUserTimer);
+                    this._missingUserTimer = null;
+                }
+            },
+
+            scheduleMissingUserCheck() {
+                if (this._missingUserTimer) return;
+                this._missingUserTimer = setTimeout(() => {
+                    this._missingUserTimer = null;
+                    if (!this.currentUser) return;
+                    const stillExists = (mockDataStore.users || []).some(user => user.id === this.currentUser.id);
+                    if (stillExists) return;
+                    this.currentUser = null;
+                    this.currentView = 'login';
+                    try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
+                    this.showToast('המשתמש הוסר מהמערכת', 'error');
+                    this.render();
+                }, 8000);
             },
 
             restoreSessionFromCloud() {
@@ -720,20 +779,20 @@
                 if (this.currentView === 'login' || !this.currentUser) {
                     appDiv.innerHTML = this.renderLoginScreen();
                 } else {
-                    if(this.currentView !== this.currentUser.role) {
-                        this.logout();
-                        return;
+                    // A role that changes in the database must not end the session.
+                    if (this.currentUser.role && this.currentView !== this.currentUser.role) {
+                        this.currentView = this.currentUser.role;
                     }
 
                     const notices = mockDataStore.notices || [];
-                    const logoUrl = 'https://lh3.googleusercontent.com/d/1WXvgS1_FYWCk5tYgdOgdpjLGEAHyJN1C=w500';
+                    const logoUrl = './assets/logo-ashrinu.png';
 
                     appDiv.innerHTML = `
                         <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center z-10 shrink-0">
                             <div class="flex items-center gap-6">
                                 <div class="flex items-center gap-4">
-                                    <div class="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden bg-slate-100 shadow-sm border border-slate-200">
-                                        <img src="${logoUrl}" alt="לוגו ישיבת אשרינו" class="w-full h-full object-cover" onerror="this.outerHTML='<i class=&quot;fas fa-book-open text-indigo-600 text-2xl&quot;></i>'">
+                                    <div class="w-24 h-12 rounded-xl flex items-center justify-center overflow-hidden bg-white shadow-sm border border-slate-200 px-1">
+                                        <img src="${logoUrl}" alt="לוגו ישיבת אשרינו" class="w-full h-full object-contain" onerror="this.outerHTML='<i class=&quot;fas fa-book-open text-indigo-600 text-2xl&quot;></i>'">
                                     </div>
                                     <div>
                                         <h1 class="font-black text-2xl text-slate-800 leading-none mb-1">ישיבת אשרינו</h1>
@@ -764,7 +823,7 @@
                                 <i class="fas fa-sign-out-alt"></i> התנתק
                             </button>
                         </header>
-                        <main class="flex-1 overflow-hidden bg-slate-50/50 relative flex flex-col" id="dashboard-container">
+                        <main class="flex-1 bg-slate-50/50 relative flex flex-col" id="dashboard-container">
                             ${this.currentView === 'admin' ? this.renderAdmin() : this.currentView === 'teacher' ? this.renderTeacher() : this.renderStudent()}
                         </main>
                         <div id="dynamic-modals"></div>
@@ -785,15 +844,15 @@
             },
 
             renderLoginScreen() {
-                const logoUrl = 'https://lh3.googleusercontent.com/d/1WXvgS1_FYWCk5tYgdOgdpjLGEAHyJN1C=w500';
+                const logoUrl = './assets/logo-ashrinu.png';
                 return `
                     <div class="flex-1 flex items-center justify-center p-4 relative overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200">
                         <div class="absolute -top-40 -right-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
                         <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
 
                         <div class="bg-white/80 backdrop-blur-xl p-10 rounded-[2rem] shadow-2xl border border-white w-full max-w-md text-center relative z-10">
-                            <div class="w-28 h-28 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-100 overflow-hidden bg-white border border-slate-100 hover:scale-105 transition-transform duration-300">
-                                <img src="${logoUrl}" alt="לוגו ישיבת אשרינו" class="w-full h-full object-cover" onerror="this.outerHTML='<i class=&quot;fas fa-book-open text-indigo-600 text-5xl&quot;></i>'">
+                            <div class="w-full max-w-[300px] h-32 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-100 overflow-hidden bg-white border border-slate-100 hover:scale-105 transition-transform duration-300 px-3">
+                                <img src="${logoUrl}" alt="לוגו ישיבת אשרינו" class="w-full h-full object-contain" onerror="this.outerHTML='<i class=&quot;fas fa-book-open text-indigo-600 text-5xl&quot;></i>'">
                             </div>
                             <h1 class="text-4xl font-black text-slate-800 mb-2">ישיבת אשרינו</h1>
                             <p class="text-slate-500 mb-8 font-medium">מרחב למידה דיגיטלי מתקדם</p>
@@ -826,7 +885,7 @@
             renderAdmin() {
                 const currentTab = this.adminTab || 'users';
                 return `
-                    <div class="flex flex-col h-full bg-slate-50/50">
+                    <div class="flex flex-col bg-slate-50/50">
                         <div class="flex border-b border-slate-200 bg-white px-6 pt-3 gap-4 shrink-0 shadow-sm z-10 overflow-x-auto">
                             <button onclick="appState.setAdminTab('users')" class="${currentTab === 'users' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-users-cog"></i> משתמשים וצוות</button>
                             <button onclick="appState.setAdminTab('classes')" class="${currentTab === 'classes' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-chalkboard"></i> מערך כיתות (שיבוצים)</button>
@@ -856,7 +915,7 @@
 
             renderAdminUsers() {
                 return `
-                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-full">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                         <div class="bg-indigo-600 p-4 border-b flex flex-col md:flex-row justify-between items-center shrink-0 gap-4">
                             <h3 class="font-black text-white flex items-center gap-2 shrink-0"><i class="fas fa-users-cog"></i> ניהול משתמשים</h3>
                             <div class="flex-1 w-full max-w-md relative">
@@ -1133,8 +1192,8 @@
             renderAdminNotices() {
                 const notices = mockDataStore.notices || [];
                 return `
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] lg:h-full">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] lg:h-[600px]">
                             <div class="bg-amber-500 p-4 border-b shrink-0 flex justify-between items-center">
                                 <h3 class="font-black text-white flex items-center gap-2"><i class="fas fa-bullhorn"></i> הודעות פעילות במערכת</h3>
                             </div>
@@ -1254,16 +1313,16 @@
             // ==================== מורה ====================
             renderTeacher() {
                 const cls = this.currentUser.className || '';
-                if(!cls) return `<div class="flex items-center justify-center h-full text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
+                if(!cls) return `<div class="flex items-center justify-center min-h-[50vh] text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
 
                 return `
-                    <div class="flex flex-col h-full bg-slate-50/50">
+                    <div class="flex flex-col bg-slate-50/50">
                         <div class="flex border-b border-slate-200 bg-white px-6 pt-3 gap-4 shrink-0 shadow-sm z-10 overflow-x-auto">
                             <button onclick="appState.setTeacherTab('live')" class="${this.teacherTab === 'live' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-broadcast-tower"></i> שידור חי ו-AI</button>
                             <button onclick="appState.setTeacherTab('grades')" class="${this.teacherTab === 'grades' ? 'border-b-2 border-emerald-600 text-emerald-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-table"></i> ציונים ומעקב</button>
                             <button onclick="appState.setTeacherTab('chat')" class="${this.teacherTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-comments"></i> תקשורת כיתתית</button>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-4 relative">
+                        <div class="flex-1 p-4 relative">
                             ${this.teacherTab === 'live' ? this.renderTeacherLiveTab(cls) : this.teacherTab === 'grades' ? this.renderTeacherGradesTab(cls) : this.renderTeacherChatTab(cls)}
                         </div>
                     </div>
@@ -1285,7 +1344,7 @@
                 const enabled = !this.isAiEnabledForStudents(className);
                 if (!mockDataStore.aiEnabledForStudents) mockDataStore.aiEnabledForStudents = {};
                 mockDataStore.aiEnabledForStudents[className] = enabled;
-                window.cloudStorage?.saveClassControls?.({ className, aiEnabled: enabled });
+                this.syncToCloud();
                 this.showToast(enabled ? 'גישה לבינה מלאכותית הופעלה לתלמידים' : 'גישה לבינה מלאכותית נחסמה לתלמידים', enabled ? 'success' : 'error');
                 this.render();
             },
@@ -1295,8 +1354,8 @@
                 const classArchives = mockDataStore.archives[cls] || [];
                 const aiEnabled = this.isAiEnabledForStudents(cls);
                 return `
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
-                        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[500px] lg:h-full">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[520px] lg:h-[640px]">
                             <div class="bg-slate-800 p-3 border-b flex justify-between items-center shrink-0">
                                 <h3 class="font-black text-white flex items-center gap-2"><i class="fas fa-broadcast-tower text-red-400 animate-pulse"></i> שידור חי: כיתה ${cls}</h3>
                                 <div class="flex gap-2">
@@ -1326,7 +1385,7 @@
                             </div>
                         </div>
 
-                        <div class="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-2xl border border-indigo-200 p-4 shadow-sm flex flex-col relative overflow-hidden h-[500px] lg:h-full">
+                        <div class="bg-gradient-to-br from-indigo-50 to-blue-100 rounded-2xl border border-indigo-200 p-4 shadow-sm flex flex-col relative overflow-hidden h-[520px] lg:h-[640px]">
                             <h3 class="font-black text-indigo-900 mb-2 flex items-center gap-2"><i class="fas fa-brain"></i> סייע בניית שאלות (AI)</h3>
                             <p class="text-xs text-indigo-700 mb-3 shrink-0">בחר מקורות מידע, והמודל ייצר עבורך שאלות חזרה לחומר הנלמד.</p>
 
@@ -1358,7 +1417,7 @@
                 const myStudents = mockDataStore.users.filter(u => u.role === 'student' && u.className === cls);
                 const classExams = mockDataStore.exams[cls] || [];
                 return `
-                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                         <div class="bg-emerald-600 p-4 border-b flex justify-between items-center shrink-0">
                             <h3 class="font-black text-white flex items-center gap-2 text-lg"><i class="fas fa-table"></i> גיליון ציונים כיתתי</h3>
                             <div class="flex gap-2">
@@ -1474,8 +1533,8 @@
                 }
 
                 return `
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[350px] md:h-full">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[350px] md:h-[70vh]">
                             <div class="bg-blue-600 p-3 border-b shrink-0">
                                 <h3 class="font-black text-white flex items-center gap-2"><i class="fas fa-users"></i> כיתה ${cls}</h3>
                             </div>
@@ -1502,7 +1561,7 @@
                             </div>
                         </div>
 
-                        <div class="md:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[450px] md:h-full">
+                        <div class="md:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[450px] md:h-[70vh]">
                             <div class="bg-slate-50 p-4 border-b shrink-0 flex justify-between items-center">
                                 <div>
                                     <h3 class="font-black text-slate-800 text-lg">${headerTitle}</h3>
@@ -1659,31 +1718,36 @@
             },
 
             viewArchive() {
-                const cls = this.currentUser.className;
-                const archives = mockDataStore.archives[cls] || [];
+                const isStaff = this.currentUser.role === 'teacher' || this.currentUser.role === 'admin';
+                const cls = this.currentUser.className || '';
+                const archives = (mockDataStore.archives && mockDataStore.archives[cls]) || [];
+                const safeClass = DOMPurify.sanitize(cls);
 
                 const modalHtml = `
-                    <div id="archive-modal" class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
-                        <div class="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+                    <div id="archive-modal" class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4"${isStaff ? '' : ' oncontextmenu="return false; event.preventDefault();"'}>
+                        <div class="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
                             <div class="bg-indigo-600 p-4 text-white flex justify-between items-center shrink-0">
-                                <h3 class="font-bold flex items-center gap-2"><i class="fas fa-archive"></i> ארכיון שיעורים: כיתה ${cls}</h3>
-                                <button onclick="document.getElementById('archive-modal').remove()" class="hover:bg-white/20 w-8 h-8 rounded-lg flex items-center justify-center"><i class="fas fa-times"></i></button>
+                                <h3 class="font-bold flex items-center gap-2"><i class="fas fa-archive"></i> ארכיון שיעורים: כיתה ${safeClass}</h3>
+                                <button onclick="appState.closeArchive()" class="hover:bg-white/20 w-8 h-8 rounded-lg flex items-center justify-center" aria-label="סגור"><i class="fas fa-times"></i></button>
                             </div>
-                            <div class="p-6 flex-1 overflow-y-auto bg-slate-50 space-y-4">
+                            <div class="p-6 flex-1 overflow-y-auto bg-slate-50 space-y-4${isStaff ? '' : ' no-copy'}"${isStaff ? '' : ' oncopy="return false;" oncut="return false;" ondragstart="return false;"'}>
                                 ${archives.length ? archives.map(a => `
                                     <div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex flex-col gap-3">
-                                        <div class="flex justify-between items-start border-b pb-2">
+                                        <div class="flex justify-between items-start gap-3 border-b pb-2">
                                             <div>
                                                 <h4 class="font-bold text-lg text-slate-800">${DOMPurify.sanitize(a.title)}</h4>
-                                                <span class="text-xs text-slate-500">${a.date}</span>
+                                                <span class="text-xs text-slate-500">${DOMPurify.sanitize(a.date || '')}</span>
                                             </div>
-                                            <button onclick="appState.downloadArchive(${a.id})" class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-200 flex items-center gap-2">
+                                            ${isStaff ? `<button onclick="appState.downloadArchive(${Number(a.id)})" class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold border border-blue-200 flex items-center gap-2 shrink-0">
                                                 <i class="fas fa-file-word"></i> הורד כ-Word
-                                            </button>
+                                            </button>` : `<span class="text-[11px] font-bold text-slate-400 flex items-center gap-1 shrink-0"><i class="fas fa-lock"></i> לצפייה בלבד</span>`}
                                         </div>
-                                        <div class="text-slate-700 text-sm font-serif leading-relaxed" id="archive-content-${a.id}">
+                                        <div class="text-slate-700 text-sm font-serif leading-relaxed${isStaff ? ' archive-preview' : ''}" id="archive-content-${a.id}">
                                             ${DOMPurify.sanitize(a.content)}
                                         </div>
+                                        ${isStaff ? `<button onclick="appState.toggleArchivePreview(${Number(a.id)}, this)" class="self-start text-indigo-700 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition">
+                                            <i class="fas fa-chevron-down"></i> הצג עוד
+                                        </button>` : ''}
                                     </div>
                                 `).join('') : '<div class="text-center text-slate-500 py-8 font-medium">הארכיון ריק כעת.</div>'}
                             </div>
@@ -1691,6 +1755,61 @@
                     </div>
                 `;
                 document.getElementById('dynamic-modals').innerHTML = modalHtml;
+                if (!isStaff) this.lockArchiveCopy();
+            },
+
+            closeArchive() {
+                const modal = document.getElementById('archive-modal');
+                if (modal) modal.remove();
+                this.unlockArchiveCopy();
+            },
+
+            toggleArchivePreview(id, button) {
+                const content = document.getElementById(`archive-content-${id}`);
+                if (!content) return;
+                const expanded = content.classList.toggle('expanded');
+                if (button) {
+                    button.innerHTML = expanded
+                        ? '<i class="fas fa-chevron-up"></i> הצג פחות'
+                        : '<i class="fas fa-chevron-down"></i> הצג עוד';
+                }
+            },
+
+            lockArchiveCopy() {
+                this.unlockArchiveCopy();
+                this._archiveBlockCopy = (event) => {
+                    if (!document.getElementById('archive-modal')) return;
+                    const target = event.target;
+                    if (target && target.closest && target.closest('input, textarea')) return;
+                    event.preventDefault();
+                    return false;
+                };
+                this._archiveBlockKeys = (event) => {
+                    if (!document.getElementById('archive-modal')) return;
+                    const key = (event.key || '').toLowerCase();
+                    if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'a', 'p', 's'].includes(key)) {
+                        event.preventDefault();
+                        this.showToast('בתצוגת ארכיון אין אפשרות להעתיק או להוריד', 'error');
+                        return false;
+                    }
+                };
+                document.addEventListener('copy', this._archiveBlockCopy, true);
+                document.addEventListener('cut', this._archiveBlockCopy, true);
+                document.addEventListener('contextmenu', this._archiveBlockCopy, true);
+                document.addEventListener('keydown', this._archiveBlockKeys, true);
+            },
+
+            unlockArchiveCopy() {
+                if (this._archiveBlockCopy) {
+                    document.removeEventListener('copy', this._archiveBlockCopy, true);
+                    document.removeEventListener('cut', this._archiveBlockCopy, true);
+                    document.removeEventListener('contextmenu', this._archiveBlockCopy, true);
+                    this._archiveBlockCopy = null;
+                }
+                if (this._archiveBlockKeys) {
+                    document.removeEventListener('keydown', this._archiveBlockKeys, true);
+                    this._archiveBlockKeys = null;
+                }
             },
 
             exportHTMLToWord(html, filename) {
@@ -1711,6 +1830,7 @@
             },
 
             downloadArchive(id) {
+                if (this.currentUser.role !== 'teacher' && this.currentUser.role !== 'admin') return;
                 const cls = this.currentUser.className;
                 const archives = mockDataStore.archives[cls] || [];
                 const archive = archives.find(a => a.id === id);
@@ -1860,12 +1980,12 @@
             // ==================== תלמיד ====================
             renderStudent() {
                 const cls = this.currentUser.className || '';
-                if(!cls) return `<div class="flex items-center justify-center h-full text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
+                if(!cls) return `<div class="flex items-center justify-center min-h-[50vh] text-xl text-slate-500 font-bold">אינך משויך לכיתה כרגע.</div>`;
 
                 setTimeout(() => this.animateStudentAverage(), 100);
 
                 return `
-                    <div class="flex flex-col h-full bg-slate-50/50">
+                    <div class="flex flex-col bg-slate-50/50">
                         <div class="flex flex-wrap justify-between items-center border-b border-slate-200 bg-white px-6 pt-3 pb-0 gap-4 shrink-0 shadow-sm z-10">
                             <div class="flex gap-4 overflow-x-auto">
                                 <button onclick="appState.setStudentTab('live')" class="${this.studentTab === 'live' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-chalkboard-teacher"></i> למידה ומחברות</button>
@@ -1880,13 +2000,16 @@
                                         <span id="student-avg-emoji" class="text-xl"></span>
                                     </div>
                                 </div>
+                                <button onclick="appState.viewArchive()" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-1.5 rounded-xl font-black shadow-sm transition flex items-center gap-2 border border-indigo-200 text-sm">
+                                    <i class="fas fa-archive"></i> ארכיון שיעורים
+                                </button>
                                 <button onclick="appState.showFloatingBoard()" class="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-1.5 rounded-xl font-black shadow-sm transition flex items-center gap-2 border border-red-200 text-sm">
                                     <i class="fas fa-external-link-alt"></i> פתח לוח שידור חי
                                 </button>
                             </div>
                         </div>
 
-                        <div class="flex-1 overflow-y-auto p-4 relative" id="student-main-area">
+                        <div class="flex-1 p-4 relative" id="student-main-area">
                             ${this.studentTab === 'live' ? this.renderStudentLiveTab(cls) : this.studentTab === 'grades' ? this.renderStudentGradesTab() : this.renderStudentChatTab()}
                         </div>
 
@@ -1918,8 +2041,8 @@
                 const myNotebooks = this.currentUser.notebooks || [];
                 const aiEnabled = this.isAiEnabledForStudents(cls);
                 return `
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 h-full">
-                        <div class="lg:col-span-2 flex flex-col gap-4 h-[600px] md:h-full">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+                        <div class="lg:col-span-2 flex flex-col gap-4 h-[600px] md:h-[70vh]">
                             <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 shrink-0 flex justify-between items-center">
                                 <div>
                                     <h3 class="font-black text-slate-800 text-lg mb-1 flex items-center gap-2"><i class="fas fa-book"></i> המחברות שלי</h3>
@@ -1952,7 +2075,7 @@
                             </div>
                         </div>
 
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] md:h-full" style="${aiEnabled ? '' : 'opacity: 0.6; pointer-events: none;'}" aria-disabled="${!aiEnabled}">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] md:h-[70vh]" style="${aiEnabled ? '' : 'opacity: 0.6; pointer-events: none;'}" aria-disabled="${!aiEnabled}">
                             <div class="bg-teal-600 p-4 border-b flex items-center gap-3 shrink-0">
                                 <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white"><i class="fas fa-robot"></i></div>
                                 <h3 class="font-black text-white text-lg">סייע למידה (Gemini)</h3>
@@ -1981,7 +2104,7 @@
             renderStudentGradesTab() {
                 const myGrades = mockDataStore.grades.filter(g => g.studentId === this.currentUser.id);
                 return `
-                    <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden h-full flex flex-col">
+                    <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                         <div class="bg-emerald-600 p-6 border-b shrink-0 flex items-center gap-4 text-white">
                             <div class="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-3xl"><i class="fas fa-chart-line"></i></div>
                             <div>
@@ -2024,7 +2147,7 @@
                 const chatHistory = this.getStudentChatHistory();
 
                 return `
-                    <div class="max-w-4xl mx-auto h-full flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="max-w-4xl mx-auto h-[70vh] flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div class="bg-blue-600 p-4 border-b shrink-0 flex items-center gap-4 text-white">
                             <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-xl"><i class="fas fa-user-tie"></i></div>
                             <div>
