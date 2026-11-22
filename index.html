@@ -243,6 +243,7 @@
             chatSelectedUser: 'all',
             studentTab: 'live',
             studentLiveBoardOpen: false,
+            openNotebook: null,
             adminTab: 'users',
             adminPasswordsVisible: false,
 
@@ -351,7 +352,17 @@
                                     return;
                                 }
 
-                                // Any other data change: reconcile the UI.
+                                // Any other data change: rebuild only if something this view
+                                // actually shows has changed. A rebuild replaces the notebook
+                                // viewer, so unrelated activity (another user signing in, the
+                                // teacher typing) must never trigger one.
+                                const signature = this.viewDataSignature();
+                                if (signature === this._viewSignature) {
+                                    this.updateLiveBoardUIOnly();
+                                    this.updateNoticesUIOnly();
+                                    if (this.currentView === 'student') this.restoreNotebookViewer();
+                                    return;
+                                }
                                 this.updateDynamicUI();
                             }
                         });
@@ -449,6 +460,45 @@
                 if (window.cloudStorage && typeof window.cloudStorage.saveData === 'function') {
                     window.cloudStorage.saveData({ mockDataStore: mockDataStore });
                 }
+            },
+
+            // Everything the current screen renders from. When this string is unchanged the
+            // DOM does not need to be rebuilt at all.
+            viewDataSignature() {
+                if (!this.currentUser) return 'login';
+                const view = this.currentView;
+                const cls = this.currentUser.className || '';
+                const tab = view === 'teacher' ? this.teacherTab : view === 'student' ? this.studentTab : this.adminTab;
+                const users = mockDataStore.users || [];
+                const signature = {
+                    view,
+                    tab,
+                    me: [
+                        this.currentUser.id,
+                        this.currentUser.name,
+                        this.currentUser.role,
+                        this.currentUser.className || '',
+                        (this.currentUser.notebooks || []).map(nb => [nb.name, nb.url])
+                    ],
+                    notices: (mockDataStore.notices || []).map(n => [n.id, n.title, n.content]),
+                    live: cls ? (mockDataStore.liveContent || {})[cls] || '' : '',
+                    ai: cls ? this.isAiEnabledForStudents(cls) : null
+                };
+
+                if (view === 'admin') {
+                    signature.classes = mockDataStore.classes || [];
+                    signature.users = users.map(u => [u.id, u.name, u.role, u.className || '', u.password, u.lastLogin || '']);
+                } else if (view === 'teacher') {
+                    const classUsers = users.filter(u => u.className === cls);
+                    const classIds = classUsers.map(u => u.id);
+                    signature.users = classUsers.map(u => [u.id, u.name, u.role, u.lastLogin || '', (u.notebooks || []).map(nb => nb.name)]);
+                    signature.grades = (mockDataStore.grades || []).filter(g => classIds.includes(g.studentId));
+                    signature.exams = (mockDataStore.exams || {})[cls] || [];
+                    signature.archives = ((mockDataStore.archives || {})[cls] || []).map(a => [a.id, a.title, a.date, (a.content || '').length]);
+                } else if (view === 'student') {
+                    signature.grades = (mockDataStore.grades || []).filter(g => g.studentId === this.currentUser.id);
+                }
+                return JSON.stringify(signature);
             },
 
             updateDynamicUI() {
@@ -775,9 +825,11 @@
             render() {
                 const appDiv = document.getElementById('app');
                 if (!appDiv) return;
+                const scrollY = window.scrollY || 0;
 
                 if (this.currentView === 'login' || !this.currentUser) {
                     appDiv.innerHTML = this.renderLoginScreen();
+                    this._viewSignature = 'login';
                 } else {
                     // A role that changes in the database must not end the session.
                     if (this.currentUser.role && this.currentView !== this.currentUser.role) {
@@ -836,6 +888,15 @@
                         (this.currentView === 'student' && this.studentTab === 'chat')) {
                         this.scrollActiveChatToBottom();
                     }
+                    if (this.currentView === 'student') {
+                        this.restoreNotebookViewer();
+                    }
+                    // Keep the reader where they were instead of jumping to the top.
+                    if (scrollY) {
+                        window.scrollTo(0, scrollY);
+                        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+                    }
+                    this._viewSignature = this.viewDataSignature();
                 }
             },
 
@@ -2221,16 +2282,24 @@
             },
 
             openNotebookInViewer(url, name) {
+                this.openNotebook = { url, name };
+                this.restoreNotebookViewer();
+            },
+
+            restoreNotebookViewer() {
+                if (!this.openNotebook) return;
                 const iframe = document.getElementById('notebook-iframe');
                 const placeholder = document.getElementById('viewer-placeholder');
                 const title = document.getElementById('viewer-title');
+                if (!iframe || !placeholder || !title) return;
 
-                if (iframe && placeholder && title) {
-                    placeholder.classList.add('hidden');
-                    iframe.classList.remove('hidden');
-                    iframe.src = url;
-                    title.innerHTML = `<i class="fas fa-book-open text-indigo-600"></i> ${name}`;
+                placeholder.classList.add('hidden');
+                iframe.classList.remove('hidden');
+                // Only reload the viewer when the document actually changes.
+                if (iframe.getAttribute('src') !== this.openNotebook.url) {
+                    iframe.src = this.openNotebook.url;
                 }
+                title.innerHTML = `<i class="fas fa-book-open text-indigo-600"></i> ${DOMPurify.sanitize(this.openNotebook.name)}`;
             },
 
             addNewStudentNotebook() {
