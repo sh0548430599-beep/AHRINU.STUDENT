@@ -488,6 +488,9 @@
                 const cls = this.currentUser.className || '';
                 const tab = view === 'teacher' ? this.teacherTab : view === 'student' ? this.studentTab : this.adminTab;
                 const users = mockDataStore.users || [];
+
+                // Every list is sorted and reduced to plain tuples so a reordered array or a
+                // timestamp another user's action touched can never look like a real change.
                 const signature = {
                     view,
                     tab,
@@ -495,42 +498,52 @@
                         this.currentUser.id,
                         this.currentUser.name,
                         this.currentUser.role,
-                        this.currentUser.className || '',
-                        (this.currentUser.notebooks || []).map(nb => [nb.name, nb.url])
+                        cls,
+                        (this.currentUser.notebooks || []).map(nb => [nb.name, nb.url]).sort()
                     ],
-                    notices: (mockDataStore.notices || []).map(n => [n.id, n.title, n.content]),
+                    notices: (mockDataStore.notices || []).map(n => [n.id, n.title, n.content]).sort(),
                     live: cls ? (mockDataStore.liveContent || {})[cls] || '' : '',
                     ai: cls ? this.isAiEnabledForStudents(cls) : null
                 };
 
                 if (view === 'admin') {
-                    signature.classes = mockDataStore.classes || [];
-                    signature.users = users.map(u => [u.id, u.name, u.role, u.className || '', u.password, u.lastLogin || '']);
+                    signature.classes = (mockDataStore.classes || []).slice().sort();
+                    signature.users = users.map(u => [u.id, u.name, u.role, u.className || '', u.password || '']).sort();
                 } else if (view === 'teacher') {
                     const classUsers = users.filter(u => u.className === cls);
                     const classIds = classUsers.map(u => u.id);
-                    signature.users = classUsers.map(u => [u.id, u.name, u.role, u.lastLogin || '', (u.notebooks || []).map(nb => nb.name)]);
-                    signature.grades = (mockDataStore.grades || []).filter(g => classIds.includes(g.studentId));
-                    signature.exams = (mockDataStore.exams || {})[cls] || [];
-                    signature.archives = ((mockDataStore.archives || {})[cls] || []).map(a => [a.id, a.title, a.date, (a.content || '').length]);
+                    signature.users = classUsers
+                        .map(u => [u.id, u.name, u.role, (u.notebooks || []).map(nb => nb.name).sort()])
+                        .sort();
+                    signature.grades = (mockDataStore.grades || [])
+                        .filter(g => classIds.includes(g.studentId))
+                        .map(g => [g.studentId, g.testName, g.grade])
+                        .sort();
+                    signature.exams = ((mockDataStore.exams || {})[cls] || []).map(e => e.name).sort();
+                    signature.archives = ((mockDataStore.archives || {})[cls] || [])
+                        .map(a => [a.id, a.title, a.date, (a.content || '').length])
+                        .sort();
                 } else if (view === 'student') {
-                    signature.grades = (mockDataStore.grades || []).filter(g => g.studentId === this.currentUser.id);
+                    signature.grades = (mockDataStore.grades || [])
+                        .filter(g => g.studentId === this.currentUser.id)
+                        .map(g => [g.testName, g.grade])
+                        .sort();
                 }
                 return stableStringify(signature);
             },
 
             updateDynamicUI() {
-                if (this.currentView === 'login') return;
+                if (this.currentView === 'login' || !this.currentUser) return;
 
-                // A student who is reading a notebook keeps that exact DOM: rebuilds would
-                // reload the embedded document. Patch the few things that can change instead.
-                const readingNotebook = this.currentView === 'student' &&
-                    this.studentTab === 'live' &&
-                    this.openNotebook &&
-                    this._liveTabClass === (this.currentUser?.className || '');
-                if (readingNotebook) {
-                    this.patchStudentLiveTab();
-                    this._viewSignature = this.viewDataSignature();
+                // A student's screen is never rebuilt because of cloud data: an open notebook,
+                // the scroll position and half-typed text survive everyone else's activity.
+                if (this.currentView === 'student') {
+                    const cls = this.currentUser.className || '';
+                    if (this._liveTabClass && this._liveTabClass !== cls) {
+                        this.render();
+                        return;
+                    }
+                    this.patchStudentView();
                     return;
                 }
 
@@ -655,6 +668,27 @@
                         this.currentUser?.id || 'student'
                     );
                 }
+            },
+
+            patchStudentView() {
+                if (!this.currentUser) return;
+                if (this.studentTab === 'live') {
+                    this.patchStudentLiveTab();
+                } else if (this.studentTab === 'grades') {
+                    this.patchStudentGradesTab();
+                } else {
+                    this.updateChatUIOnly();
+                }
+                this.updateNoticesUIOnly();
+                this.updateLiveBoardUIOnly();
+                this._viewSignature = this.viewDataSignature();
+            },
+
+            patchStudentGradesTab() {
+                const area = document.getElementById('student-main-area');
+                if (!area) return;
+                area.innerHTML = this.renderStudentGradesTab();
+                this.animateStudentAverage();
             },
 
             patchStudentLiveTab() {
