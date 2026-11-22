@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
     <link rel="preload" href="./assets/fonts/heebo-hebrew-f1f7cfaef594.woff2" as="font" type="font/woff2" crossorigin>
-    <link href="./assets/tailwind-9b096270d690.min.css" rel="stylesheet">
+    <link href="./assets/tailwind-aa9715820fc7.min.css" rel="stylesheet">
     <link href="./assets/icons-52930673420b.min.css" rel="stylesheet">
     <script src="./assets/purify-3.0.6.min.js"></script>
     <style>
@@ -150,7 +150,8 @@
             liveContent: {},
             aiEnabledForStudents: {},
             archives: {},
-            chat: []
+            chat: [],
+            chatReads: {}
         };
 
         let mockDataStore = JSON.parse(JSON.stringify(initialMockData));
@@ -342,7 +343,11 @@
 
                                 // On the chat tab, reconcile messages/board/notices in place (never full-render).
                                 if (onChatTab) {
+                                    // Reading a thread right now means its messages are read.
+                                    if (this.currentView === 'teacher') this.markThreadRead(this.chatSelectedUser);
                                     this.updateChatUIOnly();
+                                    this.updateUnreadPanelUIOnly();
+                                    this.updateChatBadgeUIOnly();
                                     this.updateLiveBoardUIOnly();
                                     this.updateNoticesUIOnly();
                                     if (chatGrew) this.scrollActiveChatToBottom();
@@ -372,7 +377,11 @@
                                 if (signature === this._viewSignature) {
                                     this.updateLiveBoardUIOnly();
                                     this.updateNoticesUIOnly();
-                                    if (this.currentView === 'student') this.restoreNotebookViewer();
+                                    if (this.currentView === 'student') {
+                                        this.restoreNotebookViewer();
+                                    } else {
+                                        this.updateChatBadgeUIOnly();
+                                    }
                                     return;
                                 }
                                 this.updateDynamicUI();
@@ -562,14 +571,121 @@
                 }
             },
 
+            // ==================== הודעות שלא נקראו (מורה) ====================
+            teacherReadMarker(threadKey) {
+                const teacherId = this.currentUser?.id;
+                if (!teacherId || !threadKey) return 0;
+                return Number(mockDataStore.chatReads?.[teacherId]?.[threadKey] || 0);
+            },
+
+            getUnreadMessages(cls = this.currentUser?.className) {
+                if (this.currentUser?.role !== 'teacher' || !cls) return {};
+                const studentIds = new Set((mockDataStore.users || [])
+                    .filter(u => u.role === 'student' && u.className === cls)
+                    .map(u => u.id));
+
+                const unread = {};
+                (mockDataStore.chat || []).forEach(message => {
+                    if (!studentIds.has(message.from)) return;
+                    if (!this.isChatToTeacher(message, cls)) return;
+                    if (Number(message.id) <= this.teacherReadMarker(message.from)) return;
+                    if (!unread[message.from]) unread[message.from] = [];
+                    unread[message.from].push(message);
+                });
+                return unread;
+            },
+
+            getUnreadCount(cls = this.currentUser?.className) {
+                return Object.values(this.getUnreadMessages(cls))
+                    .reduce((total, messages) => total + messages.length, 0);
+            },
+
+            markThreadRead(studentId) {
+                if (this.currentUser?.role !== 'teacher') return false;
+                if (!studentId || studentId === 'all') return false;
+
+                const messages = (mockDataStore.chat || [])
+                    .filter(m => m.from === studentId && this.isChatToTeacher(m));
+                if (!messages.length) return false;
+
+                const latestId = Math.max(...messages.map(m => Number(m.id) || 0));
+                if (latestId <= this.teacherReadMarker(studentId)) return false;
+
+                if (!mockDataStore.chatReads) mockDataStore.chatReads = {};
+                const teacherId = this.currentUser.id;
+                if (!mockDataStore.chatReads[teacherId]) mockDataStore.chatReads[teacherId] = {};
+                mockDataStore.chatReads[teacherId][studentId] = latestId;
+                this.syncToCloud();
+                return true;
+            },
+
+            renderUnreadPanel(cls = this.currentUser?.className) {
+                const unread = this.getUnreadMessages(cls);
+                const entries = Object.keys(unread).map(studentId => {
+                    const student = (mockDataStore.users || []).find(u => u.id === studentId);
+                    return {
+                        studentId,
+                        name: student ? student.name : studentId,
+                        messages: this.sortChatMessages(unread[studentId])
+                    };
+                }).sort((a, b) => Number(b.messages[b.messages.length - 1].id) - Number(a.messages[a.messages.length - 1].id));
+
+                if (!entries.length) return '<div id="teacher-unread-panel"></div>';
+
+                const total = entries.reduce((sum, entry) => sum + entry.messages.length, 0);
+                return `
+                    <div id="teacher-unread-panel" class="mb-4">
+                        <div class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 shadow-sm">
+                            <div class="font-black text-amber-900 mb-2 flex items-center gap-2">
+                                <i class="fas fa-bell animate-pulse"></i> הודעות שלא נקראו
+                                <span class="bg-rose-500 text-white text-xs font-black rounded-full px-2 py-0.5">${total}</span>
+                            </div>
+                            <div class="space-y-2">
+                                ${entries.map(entry => {
+                                    const last = entry.messages[entry.messages.length - 1];
+                                    return `
+                                        <button onclick="appState.selectChatUser('${escJs(entry.studentId)}')" class="w-full text-right bg-white border border-amber-300 rounded-xl p-3 flex justify-between items-start gap-3 hover:bg-amber-100 transition">
+                                            <div class="min-w-0">
+                                                <div class="font-black text-slate-900">${DOMPurify.sanitize(entry.name)}</div>
+                                                <div class="text-sm font-bold text-slate-800 truncate">${DOMPurify.sanitize(last.text || '')}</div>
+                                                <div class="text-[11px] text-slate-500 mt-1">${DOMPurify.sanitize(last.date || '')} • ${entry.messages.length} הודעות</div>
+                                            </div>
+                                            <span class="bg-rose-500 text-white text-xs font-black rounded-full min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center shrink-0">${entry.messages.length}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            updateChatBadgeUIOnly() {
+                const badge = document.getElementById('teacher-chat-badge');
+                if (!badge) return;
+                const count = this.getUnreadCount();
+                badge.textContent = count ? String(count) : '';
+                badge.style.display = count ? 'inline-flex' : 'none';
+            },
+
+            updateUnreadPanelUIOnly() {
+                const panel = document.getElementById('teacher-unread-panel');
+                if (!panel) return;
+                const holder = document.createElement('div');
+                holder.innerHTML = this.renderUnreadPanel();
+                const replacement = holder.firstElementChild;
+                if (replacement) panel.replaceWith(replacement);
+            },
+
             generateChatMessageHTML(c, role) {
                 const isMe = role === 'teacher'
                     ? this.isChatFromTeacher(c)
                     : c.from === this.currentUser.id;
                 const isBroadcast = c.to === 'all';
+                const isUnreadForTeacher = role === 'teacher' && !isMe && Number(c.id) > this.teacherReadMarker(c.from);
                 const safeText = DOMPurify.sanitize(this.linkifyText(c.text), { ALLOWED_TAGS: ['a'], ALLOWED_ATTR: ['href', 'target', 'class'] });
                 return `
-                    <div data-chat-id="${c.id}" class="relative max-w-[75%] p-3 rounded-2xl shadow-sm text-sm ${isMe ? 'bg-[#dcf8c6] self-end border border-[#c4eab0]' : isBroadcast ? 'bg-amber-100 self-start border border-amber-200' : 'bg-white self-start border border-slate-100'}">
+                    <div data-chat-id="${c.id}" class="relative max-w-[75%] p-3 rounded-2xl shadow-sm text-sm ${isMe ? 'bg-[#dcf8c6] self-end border border-[#c4eab0]' : isBroadcast ? 'bg-amber-100 self-start border border-amber-200' : 'bg-white self-start border border-slate-100'}${isUnreadForTeacher ? ' ring-2 ring-rose-400 font-bold' : ''}">
                         ${isBroadcast && role === 'student' ? '<div class="text-xs text-amber-600 font-bold mb-1"><i class="fas fa-bullhorn"></i> הודעה לכלל הכיתה</div>' : ''}
                         <div class="text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">${safeText}</div>
                         <div class="text-[10px] text-slate-500 mt-1 flex justify-end">${c.date}</div>
@@ -1485,7 +1601,7 @@
                         <div class="flex border-b border-slate-200 bg-white px-6 pt-3 gap-4 shrink-0 shadow-sm z-10 overflow-x-auto">
                             <button onclick="appState.setTeacherTab('live')" class="${this.teacherTab === 'live' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-broadcast-tower"></i> שידור חי ו-AI</button>
                             <button onclick="appState.setTeacherTab('grades')" class="${this.teacherTab === 'grades' ? 'border-b-2 border-emerald-600 text-emerald-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-table"></i> ציונים ומעקב</button>
-                            <button onclick="appState.setTeacherTab('chat')" class="${this.teacherTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-comments"></i> תקשורת כיתתית</button>
+                            <button onclick="appState.setTeacherTab('chat')" class="${this.teacherTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-comments"></i> תקשורת כיתתית<span id="teacher-chat-badge" style="${this.getUnreadCount() ? '' : 'display:none'}" class="bg-rose-500 text-white text-[11px] font-black rounded-full min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center">${this.getUnreadCount() || ''}</span></button>
                         </div>
                         <div class="flex-1 p-4 relative">
                             ${this.teacherTab === 'live' ? this.renderTeacherLiveTab(cls) : this.teacherTab === 'grades' ? this.renderTeacherGradesTab(cls) : this.renderTeacherChatTab(cls)}
@@ -1496,6 +1612,7 @@
 
             setTeacherTab(tab) {
                 this.teacherTab = tab;
+                if (tab === 'chat') this.markThreadRead(this.chatSelectedUser);
                 this.render();
             },
 
@@ -1698,6 +1815,7 @@
                 }
 
                 return `
+                    ${this.renderUnreadPanel(cls)}
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[350px] md:h-[70vh]">
                             <div class="bg-blue-600 p-3 border-b shrink-0">
@@ -1804,6 +1922,7 @@
 
             selectChatUser(userId) {
                 this.chatSelectedUser = userId;
+                this.markThreadRead(userId);
                 this.render();
             },
 
