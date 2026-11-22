@@ -223,6 +223,18 @@
             });
         }
 
+        // Serialise with sorted keys: the cloud store can return the same values in a
+        // different key order after another client saves, and that must not look like a change.
+        function stableStringify(value) {
+            if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+            if (value && typeof value === 'object') {
+                return '{' + Object.keys(value).sort()
+                    .map(key => JSON.stringify(key) + ':' + stableStringify(value[key]))
+                    .join(',') + '}';
+            }
+            return JSON.stringify(value === undefined ? null : value);
+        }
+
         function escJs(value) {
             return String(value ?? '')
                 .replace(/\\/g, '\\\\')
@@ -380,7 +392,13 @@
             },
 
             getSavedViewerId() {
-                try { return localStorage.getItem('ahrinuViewerId'); } catch (e) { return null; }
+                // sessionStorage only: the login lives as long as this tab is open.
+                try { return sessionStorage.getItem('ahrinuViewerId'); } catch (e) { return null; }
+            },
+
+            clearSavedViewerId() {
+                try { sessionStorage.removeItem('ahrinuViewerId'); } catch (e) {}
+                try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
             },
 
             clearMissingUserTimer() {
@@ -399,7 +417,7 @@
                     if (stillExists) return;
                     this.currentUser = null;
                     this.currentView = 'login';
-                    try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
+                    this.clearSavedViewerId();
                     this.showToast('המשתמש הוסר מהמערכת', 'error');
                     this.render();
                 }, 8000);
@@ -498,11 +516,23 @@
                 } else if (view === 'student') {
                     signature.grades = (mockDataStore.grades || []).filter(g => g.studentId === this.currentUser.id);
                 }
-                return JSON.stringify(signature);
+                return stableStringify(signature);
             },
 
             updateDynamicUI() {
                 if (this.currentView === 'login') return;
+
+                // A student who is reading a notebook keeps that exact DOM: rebuilds would
+                // reload the embedded document. Patch the few things that can change instead.
+                const readingNotebook = this.currentView === 'student' &&
+                    this.studentTab === 'live' &&
+                    this.openNotebook &&
+                    this._liveTabClass === (this.currentUser?.className || '');
+                if (readingNotebook) {
+                    this.patchStudentLiveTab();
+                    this._viewSignature = this.viewDataSignature();
+                    return;
+                }
 
                 const activeEl = document.activeElement;
                 const isInputActive = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
@@ -625,6 +655,41 @@
                         this.currentUser?.id || 'student'
                     );
                 }
+            },
+
+            patchStudentLiveTab() {
+                if (!this.currentUser) return;
+                const cls = this.currentUser.className || '';
+
+                const list = document.getElementById('student-notebook-list');
+                if (list) {
+                    const notebooks = this.currentUser.notebooks || [];
+                    list.innerHTML = notebooks.length
+                        ? notebooks.map(nb => `
+                            <button onclick="appState.openNotebookInViewer('${escJs(nb.url)}', '${escJs(nb.name)}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-xl flex items-center gap-2 transition font-bold text-sm">
+                                <i class="fas fa-book-open"></i> ${DOMPurify.sanitize(nb.name)}
+                            </button>
+                        `).join('')
+                        : '<div class="text-slate-500 text-sm">אין מחברות משויכות.</div>';
+                }
+
+                const panel = document.getElementById('student-ai-panel');
+                if (panel) {
+                    const aiEnabled = this.isAiEnabledForStudents(cls);
+                    panel.style.opacity = aiEnabled ? '' : '0.6';
+                    panel.style.pointerEvents = aiEnabled ? '' : 'none';
+                    panel.setAttribute('aria-disabled', String(!aiEnabled));
+                    const input = document.getElementById('tutor-input');
+                    if (input) {
+                        input.disabled = !aiEnabled;
+                        input.placeholder = aiEnabled ? 'שאל שאלה...' : 'סייע חסום';
+                    }
+                    panel.querySelectorAll('button').forEach(button => { button.disabled = !aiEnabled; });
+                }
+
+                this.animateStudentAverage();
+                this.updateNoticesUIOnly();
+                this.updateLiveBoardUIOnly();
             },
 
             updateLiveBoardUIOnly() {
@@ -806,7 +871,10 @@
                     user.lastLogin = `${now.toLocaleDateString('he-IL')} ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
                     this.currentUser = user;
                     this.currentView = user.role;
-                    try { localStorage.setItem('ahrinuViewerId', user.id); } catch (e) {}
+                    try {
+                        sessionStorage.setItem('ahrinuViewerId', user.id);
+                        localStorage.removeItem('ahrinuViewerId');
+                    } catch (e) {}
                     this.syncToCloud();
                     this.render();
                     this.showToast(`ברוך הבא, ${user.name}`);
@@ -818,7 +886,8 @@
             logout() {
                 this.currentUser = null;
                 this.currentView = 'login';
-                try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
+                this.openNotebook = null;
+                this.clearSavedViewerId();
                 this.render();
             },
 
@@ -889,6 +958,7 @@
                         this.scrollActiveChatToBottom();
                     }
                     if (this.currentView === 'student') {
+                        this._liveTabClass = this.currentUser.className || '';
                         this.restoreNotebookViewer();
                     }
                     // Keep the reader where they were instead of jumping to the top.
@@ -2107,7 +2177,7 @@
                             <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 shrink-0 flex justify-between items-center">
                                 <div>
                                     <h3 class="font-black text-slate-800 text-lg mb-1 flex items-center gap-2"><i class="fas fa-book"></i> המחברות שלי</h3>
-                                    <div class="flex gap-3 overflow-x-auto pb-1">
+                                    <div class="flex gap-3 overflow-x-auto pb-1" id="student-notebook-list">
                                         ${myNotebooks.length ? myNotebooks.map(nb => `
                                             <button onclick="appState.openNotebookInViewer('${escJs(nb.url)}', '${escJs(nb.name)}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-xl flex items-center gap-2 transition font-bold text-sm">
                                                 <i class="fas fa-book-open"></i> ${nb.name}
@@ -2136,7 +2206,7 @@
                             </div>
                         </div>
 
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] md:h-[70vh]" style="${aiEnabled ? '' : 'opacity: 0.6; pointer-events: none;'}" aria-disabled="${!aiEnabled}">
+                        <div id="student-ai-panel" class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[400px] md:h-[70vh]" style="${aiEnabled ? '' : 'opacity: 0.6; pointer-events: none;'}" aria-disabled="${!aiEnabled}">
                             <div class="bg-teal-600 p-4 border-b flex items-center gap-3 shrink-0">
                                 <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white"><i class="fas fa-robot"></i></div>
                                 <h3 class="font-black text-white text-lg">סייע למידה (Gemini)</h3>
@@ -2496,6 +2566,7 @@
         };
 
         window.onload = () => {
+            try { localStorage.removeItem('ahrinuViewerId'); } catch (e) {}
             if (!window.DOMPurify) {
                 window.onerror('Required sanitizer failed to load', window.location.href, 0, 0);
                 return;
