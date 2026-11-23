@@ -95,6 +95,20 @@
             content: '.';
             animation: dots 1.5s steps(5, end) infinite;
         }
+        #student-message-banner {
+            display: none;
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            width: min(92vw, 26rem);
+            animation: bannerIn .28s ease-out;
+        }
+        @keyframes bannerIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
         @keyframes dots {
             0%, 20% { color: rgba(0,0,0,0); text-shadow: .25em 0 0 rgba(0,0,0,0), .5em 0 0 rgba(0,0,0,0); }
             40% { color: inherit; text-shadow: .25em 0 0 rgba(0,0,0,0), .5em 0 0 rgba(0,0,0,0); }
@@ -331,6 +345,9 @@
                                 const aiSettingChanged = this.currentView === 'student' &&
                                     studentClass &&
                                     previousAiEnabled !== this.isAiEnabledForStudents(studentClass);
+                                // A new message for a student pops a floating banner, on any tab.
+                                this.checkNewStudentMessages();
+
                                 const chatGrew = Array.isArray(mockDataStore.chat) && mockDataStore.chat.length > previousChatLength;
                                 const onChatTab = (this.currentView === 'teacher' && this.teacherTab === 'chat') ||
                                     (this.currentView === 'student' && this.studentTab === 'chat');
@@ -345,6 +362,7 @@
                                 if (onChatTab) {
                                     // Reading a thread right now means its messages are read.
                                     if (this.currentView === 'teacher') this.markThreadRead(this.chatSelectedUser);
+                                    if (this.currentView === 'student') this.markStudentChatRead();
                                     this.updateChatUIOnly();
                                     this.updateUnreadPanelUIOnly();
                                     this.updateChatBadgeUIOnly();
@@ -363,6 +381,7 @@
                                 if (liveContentChanged) {
                                     this.updateLiveBoardUIOnly();
                                     this.updateNoticesUIOnly();
+                                    this.updateChatBadgeUIOnly();
                                     if (mockDataStore.liveContent[studentClass]) {
                                         setTimeout(() => this.showFloatingBoard(), 0);
                                     }
@@ -379,9 +398,8 @@
                                     this.updateNoticesUIOnly();
                                     if (this.currentView === 'student') {
                                         this.restoreNotebookViewer();
-                                    } else {
-                                        this.updateChatBadgeUIOnly();
                                     }
+                                    this.updateChatBadgeUIOnly();
                                     return;
                                 }
                                 this.updateDynamicUI();
@@ -572,10 +590,23 @@
             },
 
             // ==================== הודעות שלא נקראו (מורה) ====================
-            teacherReadMarker(threadKey) {
-                const teacherId = this.currentUser?.id;
-                if (!teacherId || !threadKey) return 0;
-                return Number(mockDataStore.chatReads?.[teacherId]?.[threadKey] || 0);
+            // Read markers are stored per user and per conversation thread, so the same
+            // structure serves the teacher (key = student id) and every student
+            // (key = the class teacher's id).
+            readMarker(threadKey) {
+                const userId = this.currentUser?.id;
+                if (!userId || !threadKey) return 0;
+                return Number(mockDataStore.chatReads?.[userId]?.[String(threadKey)] || 0);
+            },
+
+            setReadMarker(threadKey, latestId) {
+                const userId = this.currentUser?.id;
+                if (!userId || !threadKey || !latestId) return false;
+                if (!mockDataStore.chatReads) mockDataStore.chatReads = {};
+                if (!mockDataStore.chatReads[userId]) mockDataStore.chatReads[userId] = {};
+                mockDataStore.chatReads[userId][String(threadKey)] = Number(latestId);
+                this.syncToCloud();
+                return true;
             },
 
             getUnreadMessages(cls = this.currentUser?.className) {
@@ -588,7 +619,7 @@
                 (mockDataStore.chat || []).forEach(message => {
                     if (!studentIds.has(message.from)) return;
                     if (!this.isChatToTeacher(message, cls)) return;
-                    if (Number(message.id) <= this.teacherReadMarker(message.from)) return;
+                    if (Number(message.id) <= this.readMarker(message.from)) return;
                     if (!unread[message.from]) unread[message.from] = [];
                     unread[message.from].push(message);
                 });
@@ -609,14 +640,9 @@
                 if (!messages.length) return false;
 
                 const latestId = Math.max(...messages.map(m => Number(m.id) || 0));
-                if (latestId <= this.teacherReadMarker(studentId)) return false;
+                if (latestId <= this.readMarker(studentId)) return false;
 
-                if (!mockDataStore.chatReads) mockDataStore.chatReads = {};
-                const teacherId = this.currentUser.id;
-                if (!mockDataStore.chatReads[teacherId]) mockDataStore.chatReads[teacherId] = {};
-                mockDataStore.chatReads[teacherId][studentId] = latestId;
-                this.syncToCloud();
-                return true;
+                return this.setReadMarker(studentId, latestId);
             },
 
             renderUnreadPanel(cls = this.currentUser?.className) {
@@ -661,11 +687,19 @@
             },
 
             updateChatBadgeUIOnly() {
-                const badge = document.getElementById('teacher-chat-badge');
-                if (!badge) return;
-                const count = this.getUnreadCount();
-                badge.textContent = count ? String(count) : '';
-                badge.style.display = count ? 'inline-flex' : 'none';
+                const teacherBadge = document.getElementById('teacher-chat-badge');
+                if (teacherBadge) {
+                    const count = this.getUnreadCount();
+                    teacherBadge.textContent = count ? String(count) : '';
+                    teacherBadge.style.display = count ? 'inline-flex' : 'none';
+                }
+
+                const studentBadge = document.getElementById('student-chat-badge');
+                if (studentBadge) {
+                    const count = this.getStudentUnreadCount();
+                    studentBadge.textContent = count ? String(count) : '';
+                    studentBadge.style.display = count ? 'inline-flex' : 'none';
+                }
             },
 
             updateUnreadPanelUIOnly() {
@@ -677,12 +711,123 @@
                 if (replacement) panel.replaceWith(replacement);
             },
 
+            // ==================== הודעות חדשות (כל המשתמשים) ====================
+            studentThreadKey() {
+                return String(this.getClassTeacherId());
+            },
+
+            getStudentIncomingMessages() {
+                if (this.currentUser?.role !== 'student') return [];
+                const me = this.currentUser.id;
+                return this.sortChatMessages((mockDataStore.chat || []).filter(c =>
+                    this.isChatFromTeacher(c) && (c.to === me || c.to === 'all')
+                ));
+            },
+
+            getStudentUnreadMessages() {
+                if (this.currentUser?.role !== 'student') return [];
+                const marker = this.readMarker(this.studentThreadKey());
+                return this.getStudentIncomingMessages().filter(c => Number(c.id) > marker);
+            },
+
+            getStudentUnreadCount() {
+                return this.getStudentUnreadMessages().length;
+            },
+
+            markStudentChatRead() {
+                if (this.currentUser?.role !== 'student') return false;
+                const incoming = this.getStudentIncomingMessages();
+                if (!incoming.length) return false;
+                const latestId = Number(incoming[incoming.length - 1].id) || 0;
+                if (!latestId || latestId <= this.readMarker(this.studentThreadKey())) return false;
+                return this.setReadMarker(this.studentThreadKey(), latestId);
+            },
+
+            // A student who has never opened the chat starts from the newest message already
+            // in the store, so old history is never counted as "new".
+            initStudentReadMarker() {
+                if (this.currentUser?.role !== 'student') return;
+                const key = this.studentThreadKey();
+                if (mockDataStore.chatReads?.[this.currentUser.id]?.[key] !== undefined) return;
+                const incoming = this.getStudentIncomingMessages();
+                if (!incoming.length) return;
+                if (!mockDataStore.chatReads) mockDataStore.chatReads = {};
+                if (!mockDataStore.chatReads[this.currentUser.id]) mockDataStore.chatReads[this.currentUser.id] = {};
+                mockDataStore.chatReads[this.currentUser.id][key] = Number(incoming[incoming.length - 1].id) || 0;
+                this.syncToCloud();
+            },
+
+            checkNewStudentMessages() {
+                if (this.currentView !== 'student' || !this.currentUser) return;
+                const incoming = this.getStudentIncomingMessages();
+                const maxId = incoming.length ? Number(incoming[incoming.length - 1].id) || 0 : 0;
+
+                if (this._bannerSessionUserId !== this.currentUser.id) {
+                    this._bannerSessionUserId = this.currentUser.id;
+                    this._lastStudentIncomingId = maxId;
+                    this.initStudentReadMarker();
+                    return;
+                }
+
+                if (maxId <= this._lastStudentIncomingId) return;
+                const fresh = incoming.filter(m => Number(m.id) > this._lastStudentIncomingId);
+                this._lastStudentIncomingId = maxId;
+                if (!fresh.length) return;
+                this.showMessageBanner(fresh[fresh.length - 1], fresh.length);
+            },
+
+            showMessageBanner(message, count = 1) {
+                if (!message || this.currentView !== 'student' || !this.currentUser) return;
+                let banner = document.getElementById('student-message-banner');
+                if (!banner) {
+                    banner = document.createElement('div');
+                    banner.id = 'student-message-banner';
+                    document.body.appendChild(banner);
+                }
+
+                const sender = (mockDataStore.users || []).find(u => u.id === message.from)
+                    || (mockDataStore.users || []).find(u => u.role === 'teacher' && u.className === this.currentUser.className);
+                const senderName = DOMPurify.sanitize(sender ? sender.name : 'המורה');
+                const title = count > 1 ? `${count} הודעות חדשות` : 'הודעה חדשה';
+                const preview = DOMPurify.sanitize(String(message.text || '').slice(0, 120));
+
+                banner.innerHTML = `
+                    <div style="direction:rtl;background:#ffffff;border:2px solid #2563eb;border-radius:18px;box-shadow:0 18px 40px rgba(15,23,42,.28);padding:12px 14px;display:flex;align-items:center;gap:12px;">
+                        <div style="width:40px;height:40px;border-radius:999px;background:#dbeafe;color:#1d4ed8;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;"><i class="fas fa-comments"></i></div>
+                        <div style="min-width:0;flex:1;">
+                            <div style="font-weight:900;color:#0f172a;font-size:14px;">${title}</div>
+                            <div style="font-weight:600;color:#475569;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${senderName} • ${preview}</div>
+                        </div>
+                        <button type="button" onclick="appState.openStudentChatFromBanner()" style="flex-shrink:0;background:#2563eb;color:#fff;border:0;border-radius:12px;padding:9px 18px;font-weight:900;font-size:14px;cursor:pointer;">פתח</button>
+                    </div>
+                `;
+                banner.style.display = 'block';
+
+                clearTimeout(this._messageBannerTimer);
+                this._messageBannerTimer = setTimeout(() => this.hideMessageBanner(), 5000);
+            },
+
+            hideMessageBanner() {
+                clearTimeout(this._messageBannerTimer);
+                this._messageBannerTimer = null;
+                const banner = document.getElementById('student-message-banner');
+                if (banner) banner.style.display = 'none';
+            },
+
+            openStudentChatFromBanner() {
+                this.hideMessageBanner();
+                if (!this.currentUser || this.currentUser.role !== 'student') return;
+                this.studentTab = 'chat';
+                this.markStudentChatRead();
+                this.render();
+            },
+
             generateChatMessageHTML(c, role) {
                 const isMe = role === 'teacher'
                     ? this.isChatFromTeacher(c)
                     : c.from === this.currentUser.id;
                 const isBroadcast = c.to === 'all';
-                const isUnreadForTeacher = role === 'teacher' && !isMe && Number(c.id) > this.teacherReadMarker(c.from);
+                const isUnreadForTeacher = role === 'teacher' && !isMe && Number(c.id) > this.readMarker(c.from);
                 const safeText = DOMPurify.sanitize(this.linkifyText(c.text), { ALLOWED_TAGS: ['a'], ALLOWED_ATTR: ['href', 'target', 'class'] });
                 return `
                     <div data-chat-id="${c.id}" class="relative max-w-[75%] p-3 rounded-2xl shadow-sm text-sm ${isMe ? 'bg-[#dcf8c6] self-end border border-[#c4eab0]' : isBroadcast ? 'bg-amber-100 self-start border border-amber-200' : 'bg-white self-start border border-slate-100'}${isUnreadForTeacher ? ' ring-2 ring-rose-400 font-bold' : ''}">
@@ -723,7 +868,10 @@
                 const historyIds = chatHistory.map((message) => String(message.id));
                 const renderedMatchesHistory = renderedIds.length === historyIds.length &&
                     renderedIds.every((id, index) => id === historyIds[index]);
-                const lastRenderedId = Number(win.dataset.lastChatId || 0);
+                // A window built by a full render already holds every message, so the marker
+                // starts from what is actually in the DOM instead of 0 (which duplicated the thread).
+                const renderedMaxId = renderedIds.reduce((max, id) => Math.max(max, Number(id) || 0), 0);
+                const lastRenderedId = Number(win.dataset.lastChatId || 0) || renderedMaxId;
                 const newMessages = chatHistory.filter((message) => Number(message.id) > lastRenderedId);
 
                 if (!chatHistory.length) {
@@ -797,6 +945,7 @@
                 }
                 this.updateNoticesUIOnly();
                 this.updateLiveBoardUIOnly();
+                this.updateChatBadgeUIOnly();
                 this._viewSignature = this.viewDataSignature();
             },
 
@@ -1034,6 +1183,9 @@
             },
 
             logout() {
+                this.hideMessageBanner();
+                this._bannerSessionUserId = null;
+                this._lastStudentIncomingId = null;
                 this.currentUser = null;
                 this.currentView = 'login';
                 this.openNotebook = null;
@@ -2274,7 +2426,7 @@
                             <div class="flex gap-4 overflow-x-auto">
                                 <button onclick="appState.setStudentTab('live')" class="${this.studentTab === 'live' ? 'border-b-2 border-indigo-600 text-indigo-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-chalkboard-teacher"></i> למידה ומחברות</button>
                                 <button onclick="appState.setStudentTab('grades')" class="${this.studentTab === 'grades' ? 'border-b-2 border-emerald-600 text-emerald-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-chart-line"></i> הציונים שלי</button>
-                                <button onclick="appState.setStudentTab('chat')" class="${this.studentTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-comments"></i> צ'אט עם המורה</button>
+                                <button onclick="appState.setStudentTab('chat')" class="${this.studentTab === 'chat' ? 'border-b-2 border-blue-600 text-blue-700 font-black' : 'text-slate-500 hover:text-slate-700 font-bold'} px-4 py-2 transition flex items-center gap-2 shrink-0"><i class="fas fa-comments"></i> צ'אט עם המורה<span id="student-chat-badge" style="${this.getStudentUnreadCount() ? '' : 'display:none'}" class="bg-rose-500 text-white text-[11px] font-black rounded-full min-w-[20px] h-5 px-1.5 inline-flex items-center justify-center">${this.getStudentUnreadCount() || ''}</span></button>
                             </div>
                             <div class="pb-2 flex items-center gap-3">
                                 <div class="bg-slate-50 border border-slate-200 px-4 py-1.5 rounded-xl shadow-sm flex items-center gap-3">
@@ -2318,6 +2470,7 @@
 
             setStudentTab(tab) {
                 this.studentTab = tab;
+                if (tab === 'chat') this.markStudentChatRead();
                 this.render();
             },
 
